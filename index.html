@@ -1,0 +1,710 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Qui apporte quoi ? — Noël en famille</title>
+
+<!-- Firebase (Realtime Database) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
+
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600;9..144,700&family=Inter:wght@400;500;600;700&display=swap');
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    --bg: #FAF5EA;
+    --card: #FFFDF8;
+    --ink: #23281F;
+    --ink-soft: #5B5A4E;
+    --pine: #163627;
+    --pine-light: #2C5941;
+    --amber: #D89B3B;
+    --amber-dark: #B97F26;
+    --berry: #8B3A3A;
+    --line: #E6DCC6;
+    --sage: #6B8F71;
+    --plum: #7B5A82;
+    --slate: #55708A;
+
+    font-family: 'Inter', sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    padding: 28px 16px 60px;
+    min-height: 100vh;
+    background-image:
+      radial-gradient(circle at 15% 8%, rgba(216,155,59,0.10), transparent 40%),
+      radial-gradient(circle at 90% 0%, rgba(22,54,39,0.08), transparent 35%);
+  }
+
+  .wrap { max-width: 900px; margin: 0 auto; }
+
+  /* ---- Config warning ---- */
+  .config-warning {
+    background: #FBEAEA; border: 1px solid #E3B4B4; color: #7A2E2E;
+    border-radius: 12px; padding: 16px 18px; margin-bottom: 20px; font-size: 14px; line-height: 1.5;
+  }
+  .config-warning code { background: rgba(0,0,0,0.06); padding: 1px 5px; border-radius: 4px; }
+
+  /* ---- Header ---- */
+  .header { text-align: center; margin-bottom: 6px; }
+  .kicker {
+    font-family: 'Inter', sans-serif; font-size: 12px; letter-spacing: 0.14em;
+    text-transform: uppercase; color: var(--amber-dark); font-weight: 600; margin-bottom: 6px;
+  }
+  h1 {
+    font-family: 'Fraunces', serif; font-optical-sizing: auto;
+    font-weight: 600; font-size: clamp(28px, 5vw, 40px);
+    color: var(--pine); margin: 0 0 6px; letter-spacing: -0.01em;
+  }
+  .subtitle { color: var(--ink-soft); font-size: 14.5px; margin-bottom: 18px; text-align: center; }
+
+  .sprig { display: block; margin: 0 auto 22px; width: 220px; height: 26px; opacity: 0.85; }
+
+  /* ---- Connection status ---- */
+  .conn-status {
+    text-align: center; font-size: 12px; color: var(--ink-soft); margin-bottom: 14px;
+    display: flex; align-items: center; justify-content: center; gap: 6px;
+  }
+  .conn-dot { width: 8px; height: 8px; border-radius: 50%; background: #C7A2A2; }
+  .conn-dot.ok { background: var(--sage); }
+
+  /* ---- Stat strip ---- */
+  .stats { display: flex; justify-content: center; gap: 28px; margin-bottom: 26px; flex-wrap: wrap; }
+  .stat { text-align: center; }
+  .stat .n { font-family: 'Fraunces', serif; font-size: 26px; color: var(--pine); font-weight: 600; }
+  .stat .l { font-size: 11.5px; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.06em; }
+
+  /* ---- Cards ---- */
+  .card {
+    background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+    padding: 20px; margin-bottom: 20px; box-shadow: 0 1px 2px rgba(22,54,39,0.04);
+  }
+
+  /* ---- Form ---- */
+  .form-title { font-family: 'Fraunces', serif; font-size: 19px; color: var(--pine); font-weight: 600; margin: 0; }
+  .form-sub { font-size: 12.5px; color: var(--ink-soft); margin: 3px 0 14px; }
+  .field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 12px; }
+  .field-row.three { grid-template-columns: 1fr 1fr 1fr; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field.full { grid-column: 1 / -1; }
+  label { font-size: 12px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+  input[type="text"], select {
+    font-family: 'Inter', sans-serif; font-size: 14.5px; color: var(--ink);
+    padding: 10px 11px; border: 1px solid var(--line); border-radius: 9px; background: #fff;
+    outline: none; transition: border-color .15s, box-shadow .15s; width: 100%;
+  }
+  input[type="text"]:focus, select:focus {
+    border-color: var(--amber); box-shadow: 0 0 0 3px rgba(216,155,59,0.18);
+  }
+  .submit-btn {
+    font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14.5px;
+    background: var(--amber); color: #2A1C05; border: none; border-radius: 9px;
+    padding: 11px 20px; cursor: pointer; transition: background .15s, transform .05s;
+    width: 100%; margin-top: 4px;
+  }
+  .submit-btn.pine { background: var(--pine); color: #F7EFDD; }
+  .submit-btn:hover { background: var(--amber-dark); }
+  .submit-btn.pine:hover { background: var(--pine-light); }
+  .submit-btn:active { transform: scale(0.99); }
+  .form-msg { font-size: 13px; color: var(--sage); margin-top: 8px; min-height: 16px; }
+
+  /* ---- Tabs ---- */
+  .tabs { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; margin-bottom: 18px; scrollbar-width: none; }
+  .tabs::-webkit-scrollbar { display: none; }
+  .tab {
+    flex: 0 0 auto; font-family: 'Inter', sans-serif; font-weight: 600; font-size: 13.5px;
+    padding: 9px 16px; border-radius: 999px; border: 1px solid var(--line); background: #fff;
+    color: var(--ink-soft); cursor: pointer; transition: all .15s; white-space: nowrap;
+  }
+  .tab.active { background: var(--pine); border-color: var(--pine); color: #F7EFDD; }
+  .tab:hover:not(.active) { border-color: var(--amber); color: var(--pine); }
+  .tab-special { border-style: dashed; }
+  .tab-badge {
+    display: inline-block; background: var(--berry); color: #fff; border-radius: 999px;
+    font-size: 10.5px; padding: 0 6px; margin-left: 5px; font-weight: 700;
+  }
+
+  /* ---- Meal card ---- */
+  .meal-card { padding: 18px 18px 8px; }
+  .meal-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; gap: 10px; flex-wrap: wrap; }
+  .meal-title { font-family: 'Fraunces', serif; font-size: 19px; font-weight: 600; color: var(--pine); }
+  .meal-badges { display: flex; gap: 8px; flex: 0 0 auto; }
+  .meal-badge {
+    font-family: 'Inter', sans-serif; font-weight: 700; font-size: 12px;
+    border-radius: 999px; padding: 5px 11px; display: flex; align-items: center; gap: 5px;
+  }
+  .meal-badge.count { background: var(--pine); color: #F7EFDD; }
+  .meal-badge.heads { background: #fff; color: var(--pine); border: 1px solid var(--line); }
+  .cat-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 14px; margin-bottom: 10px; }
+  .cat-block { border-top: 3px solid var(--cat-color, var(--amber)); padding-top: 9px; }
+  .cat-label {
+    font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em;
+    color: var(--ink-soft); margin-bottom: 8px; display: flex; align-items: center; gap: 6px;
+  }
+  .cat-count { font-size: 10.5px; background: var(--line); color: var(--ink-soft); border-radius: 999px; padding: 1px 7px; font-weight: 600; }
+  .chip { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; font-size: 13.5px; padding: 7px 0; border-bottom: 1px dashed var(--line); }
+  .chip:last-child { border-bottom: none; }
+  .chip .who { font-weight: 600; color: var(--pine); }
+  .chip .what { color: var(--ink); }
+  .chip .note { color: var(--ink-soft); font-size: 12.5px; }
+  .chip-actions { display: flex; align-items: center; gap: 6px; flex: 0 0 auto; }
+  .chip button.del {
+    background: none; border: none; color: var(--berry); cursor: pointer; font-size: 15px;
+    line-height: 1; padding: 2px 4px; opacity: 0.55; transition: opacity .15s;
+  }
+  .chip button.del:hover { opacity: 1; }
+  .empty-cat { font-size: 12.5px; color: #B8AF98; font-style: italic; padding: 4px 0; }
+
+  /* ---- Unassigned list ---- */
+  .unassigned-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--line); flex-wrap: wrap; }
+  .unassigned-row:last-child { border-bottom: none; }
+  .unassigned-info { font-size: 13.5px; }
+  .unassigned-info .who { font-weight: 600; color: var(--pine); }
+  .unassigned-info .cat-tag { font-size: 10.5px; background: var(--line); color: var(--ink-soft); border-radius: 999px; padding: 1px 7px; margin-left: 6px; }
+  .unassigned-actions { display: flex; gap: 6px; align-items: center; }
+  .unassigned-actions select { padding: 6px 8px; font-size: 12.5px; width: auto; }
+  .assign-btn { font-size: 12px; font-weight: 600; background: var(--sage); color: #fff; border: none; border-radius: 7px; padding: 6px 10px; cursor: pointer; }
+  .assign-btn:hover { opacity: 0.88; }
+
+  /* ---- Presence ---- */
+  .presence-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--line); flex-wrap: wrap; }
+  .presence-row:last-child { border-bottom: none; }
+  .presence-info .who { font-weight: 600; color: var(--pine); font-size: 14px; }
+  .presence-info .range { font-size: 12.5px; color: var(--ink-soft); margin-top: 2px; }
+
+  /* ---- Overview table ---- */
+  .ov-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ov-table th, .ov-table td { padding: 9px 8px; text-align: center; border-bottom: 1px solid var(--line); }
+  .ov-table th { font-weight: 600; color: var(--pine); font-family: 'Fraunces', serif; font-size: 13.5px; }
+  .ov-table td:first-child, .ov-table th:first-child { text-align: left; font-weight: 600; color: var(--ink-soft); font-size: 12.5px; }
+  .ov-heads { font-weight: 700; color: var(--slate); }
+  .ov-zero { color: #C7A2A2; font-weight: 700; }
+  .ov-ok { color: var(--sage); font-weight: 700; }
+  .ov-table-wrap { overflow-x: auto; }
+
+  .loading, .empty-state { text-align: center; color: var(--ink-soft); padding: 30px 10px; font-size: 14px; }
+
+  .footer-note { text-align: center; font-size: 12px; color: #B0A88F; margin-top: 10px; }
+
+  @media (max-width: 480px) {
+    .field-row, .field-row.three { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body>
+
+  <div class="wrap">
+
+    <div id="config-warning-slot"></div>
+
+    <div class="header">
+      <div class="kicker">Gîte en famille</div>
+      <h1>Qui apporte quoi ?</h1>
+      <div class="subtitle">Du 24 décembre au soir au 27 décembre 2026, 11h — env. 20 personnes</div>
+    </div>
+
+    <svg class="sprig" viewBox="0 0 220 26" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <line x1="0" y1="13" x2="90" y2="13" stroke="#D8CBA9" stroke-width="1"/>
+      <line x1="130" y1="13" x2="220" y2="13" stroke="#D8CBA9" stroke-width="1"/>
+      <g stroke="#6B8F71" stroke-width="2" stroke-linecap="round">
+        <path d="M95 13 L104 5 M95 13 L104 21 M95 13 L110 13"/>
+        <path d="M125 13 L116 5 M125 13 L116 21 M125 13 L110 13"/>
+      </g>
+      <circle cx="110" cy="13" r="3.2" fill="#B93E3E"/>
+    </svg>
+
+    <div class="conn-status"><span class="conn-dot" id="conn-dot"></span><span id="conn-label">Connexion…</span></div>
+
+    <div class="stats" id="noel-stats"></div>
+
+    <!-- Item form -->
+    <div class="card">
+      <div class="form-title">Ajouter ce que vous apportez</div>
+      <div class="form-sub">Le repas est optionnel — laissez "à répartir" si vous ne savez pas encore, on organisera ça ensemble.</div>
+      <form id="noel-form">
+        <div class="field-row">
+          <div class="field">
+            <label for="noel-person">Votre prénom</label>
+            <input type="text" id="noel-person" placeholder="ex. Camille" required>
+          </div>
+          <div class="field">
+            <label for="noel-item">Ce que vous apportez</label>
+            <input type="text" id="noel-item" placeholder="ex. Bûche au chocolat" required>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field">
+            <label for="noel-meal">Repas concerné (optionnel)</label>
+            <select id="noel-meal"></select>
+          </div>
+          <div class="field">
+            <label for="noel-category">Catégorie</label>
+            <select id="noel-category" required></select>
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field full">
+            <label for="noel-note">Précision (optionnel)</label>
+            <input type="text" id="noel-note" placeholder="ex. pour 8 personnes, sans gluten...">
+          </div>
+        </div>
+        <button type="submit" class="submit-btn">Ajouter à la liste</button>
+        <div class="form-msg" id="noel-form-msg"></div>
+      </form>
+    </div>
+
+    <!-- Presence form -->
+    <div class="card">
+      <div class="form-title">Feuille de présence</div>
+      <div class="form-sub">Indiquez à partir de quel repas vous êtes là, et jusqu'à quel repas.</div>
+      <form id="presence-form">
+        <div class="field-row three">
+          <div class="field">
+            <label for="pres-person">Prénom</label>
+            <input type="text" id="pres-person" placeholder="ex. Camille" required>
+          </div>
+          <div class="field">
+            <label for="pres-arrival">Présent à partir de</label>
+            <select id="pres-arrival" required></select>
+          </div>
+          <div class="field">
+            <label for="pres-departure">Présent jusqu'à</label>
+            <select id="pres-departure" required></select>
+          </div>
+        </div>
+        <button type="submit" class="submit-btn pine">Enregistrer ma présence</button>
+        <div class="form-msg" id="pres-form-msg"></div>
+      </form>
+    </div>
+
+    <div class="tabs" id="noel-tabs"></div>
+
+    <div id="noel-content">
+      <div class="loading">Chargement de la liste…</div>
+    </div>
+
+    <div class="footer-note">Les données sont partagées en direct entre tous ceux qui ouvrent cette page.</div>
+  </div>
+
+<script>
+(function() {
+  /* ============================================================
+     1) CONFIGURATION FIREBASE — remplace les valeurs ci-dessous
+        par celles copiées depuis la console Firebase
+        (Paramètres du projet > Général > Vos applications > Config)
+     ============================================================ */
+  const firebaseConfig = {
+    apiKey: "AIzaSyCAH-zLkJui4A0yRdPOPBEJOQwaK38ViqI",
+    authDomain: "noel-famille-fb847.firebaseapp.com",
+    databaseURL: "https://noel-famille-fb847-default-rtdb.europe-west1.firebasedatabase.app",
+    projectId: "noel-famille-fb847",
+    storageBucket: "noel-famille-fb847.firebasestorage.app",
+    messagingSenderId: "799926120460",
+    appId: "1:799926120460:web:e83195330887a11cf97e29"
+  };
+  /* ============================================================ */
+
+  const MEALS = [
+    { id: '24-soir',  day: '24', dayLabel: 'Mer. 24', mealLabel: 'Réveillon', order: 0 },
+    { id: '25-matin', day: '25', dayLabel: 'Jeu. 25', mealLabel: 'Petit-déj', order: 1 },
+    { id: '25-midi',  day: '25', dayLabel: 'Jeu. 25', mealLabel: 'Déjeuner de Noël', order: 2 },
+    { id: '25-soir',  day: '25', dayLabel: 'Jeu. 25', mealLabel: 'Dîner', order: 3 },
+    { id: '26-matin', day: '26', dayLabel: 'Ven. 26', mealLabel: 'Petit-déj', order: 4 },
+    { id: '26-midi',  day: '26', dayLabel: 'Ven. 26', mealLabel: 'Déjeuner', order: 5 },
+    { id: '26-soir',  day: '26', dayLabel: 'Ven. 26', mealLabel: 'Dîner', order: 6 },
+    { id: '27-matin', day: '27', dayLabel: 'Sam. 27', mealLabel: 'Petit-déj (départ 11h)', order: 7 },
+  ];
+  const DAYS = ['24','25','26','27'];
+  const CATEGORIES = [
+    { id: 'apero',   label: 'Apéro',   emoji: '🥂', color: '#D89B3B' },
+    { id: 'entree',  label: 'Entrée',  emoji: '🥗', color: '#6B8F71' },
+    { id: 'plat',    label: 'Plat',    emoji: '🍽️', color: '#8B3A3A' },
+    { id: 'dessert', label: 'Dessert', emoji: '🍰', color: '#7B5A82' },
+    { id: 'autre',   label: 'Autre',   emoji: '🎁', color: '#55708A' },
+  ];
+  const TAB_UNASSIGNED = '__unassigned__';
+  const TAB_PRESENCE = '__presence__';
+  const TAB_OVERVIEW = '__overview__';
+
+  let items = [];
+  let presence = [];
+  let activeTab = '24';
+
+  // ---- Config check ----
+  const configOk = Object.values(firebaseConfig).every(v => typeof v === 'string' && !v.includes('REMPLACE_MOI'));
+  if (!configOk) {
+    document.getElementById('config-warning-slot').innerHTML = `
+      <div class="config-warning">
+        <strong>Configuration Firebase manquante.</strong> Ouvre le fichier <code>index.html</code>,
+        repère l'objet <code>firebaseConfig</code> tout en haut du script, et remplace les valeurs
+        <code>REMPLACE_MOI</code> par celles de ta console Firebase (Paramètres du projet → Général → Vos applications).
+      </div>`;
+  }
+
+  let db = null;
+  let itemsRef = null;
+  let presenceRef = null;
+
+  function slugify(name) {
+    return (name || '').trim().toLowerCase()
+      .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '') || 'anonyme';
+  }
+
+  const mealSelectHtml = (includeEmpty, emptyLabel) => {
+    let html = '';
+    if (includeEmpty) html += `<option value="">${emptyLabel}</option>`;
+    MEALS.forEach(m => { html += `<option value="${m.id}">${m.dayLabel} — ${m.mealLabel}</option>`; });
+    return html;
+  };
+
+  document.getElementById('noel-meal').innerHTML = mealSelectHtml(true, 'À répartir plus tard');
+  document.getElementById('pres-arrival').innerHTML = mealSelectHtml(false);
+  document.getElementById('pres-departure').innerHTML = mealSelectHtml(false);
+  document.getElementById('pres-departure').value = MEALS[MEALS.length - 1].id;
+
+  const catSel = document.getElementById('noel-category');
+  CATEGORIES.forEach(c => {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = `${c.emoji} ${c.label}`;
+    catSel.appendChild(opt);
+  });
+
+  function mealById(id) { return MEALS.find(m => m.id === id); }
+  function catById(id) { return CATEGORIES.find(c => c.id === id); }
+
+  function headcountForMeal(mealId) {
+    const meal = mealById(mealId);
+    return presence.filter(p => {
+      const a = mealById(p.arrivalMealId);
+      const d = mealById(p.departureMealId);
+      if (!a || !d) return false;
+      return a.order <= meal.order && meal.order <= d.order;
+    }).length;
+  }
+
+  function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  }
+
+  function renderStats() {
+    const statsEl = document.getElementById('noel-stats');
+    const unassignedCount = items.filter(i => !i.mealId).length;
+    statsEl.innerHTML = `
+      <div class="stat"><div class="n">${items.length}</div><div class="l">Apports</div></div>
+      <div class="stat"><div class="n">${presence.length}</div><div class="l">Présences notées</div></div>
+      <div class="stat"><div class="n">${unassignedCount}</div><div class="l">À répartir</div></div>
+    `;
+  }
+
+  function renderTabs() {
+    const tabsEl = document.getElementById('noel-tabs');
+    tabsEl.innerHTML = '';
+    DAYS.forEach(d => {
+      const label = MEALS.find(m => m.day === d).dayLabel;
+      const btn = document.createElement('button');
+      btn.className = 'tab' + (activeTab === d ? ' active' : '');
+      btn.textContent = label;
+      btn.onclick = () => { activeTab = d; render(); };
+      tabsEl.appendChild(btn);
+    });
+
+    const unassignedCount = items.filter(i => !i.mealId).length;
+    const unBtn = document.createElement('button');
+    unBtn.className = 'tab tab-special' + (activeTab === TAB_UNASSIGNED ? ' active' : '');
+    unBtn.innerHTML = 'À répartir' + (unassignedCount ? `<span class="tab-badge">${unassignedCount}</span>` : '');
+    unBtn.onclick = () => { activeTab = TAB_UNASSIGNED; render(); };
+    tabsEl.appendChild(unBtn);
+
+    const presBtn = document.createElement('button');
+    presBtn.className = 'tab tab-special' + (activeTab === TAB_PRESENCE ? ' active' : '');
+    presBtn.textContent = 'Présence';
+    presBtn.onclick = () => { activeTab = TAB_PRESENCE; render(); };
+    tabsEl.appendChild(presBtn);
+
+    const ovBtn = document.createElement('button');
+    ovBtn.className = 'tab tab-special' + (activeTab === TAB_OVERVIEW ? ' active' : '');
+    ovBtn.textContent = "Vue d'ensemble";
+    ovBtn.onclick = () => { activeTab = TAB_OVERVIEW; render(); };
+    tabsEl.appendChild(ovBtn);
+  }
+
+  function renderDay(day) {
+    const contentEl = document.getElementById('noel-content');
+    contentEl.innerHTML = '';
+    const dayMeals = MEALS.filter(m => m.day === day);
+
+    dayMeals.forEach(meal => {
+      const mealItems = items.filter(i => i.mealId === meal.id);
+      const heads = headcountForMeal(meal.id);
+      const card = document.createElement('div');
+      card.className = 'card meal-card';
+
+      const head = document.createElement('div');
+      head.className = 'meal-head';
+      head.innerHTML = `
+        <div class="meal-title">${meal.mealLabel}</div>
+        <div class="meal-badges">
+          <div class="meal-badge heads">👤 ${heads} convive${heads > 1 ? 's' : ''}</div>
+          <div class="meal-badge count">${mealItems.length} apport${mealItems.length > 1 ? 's' : ''}</div>
+        </div>
+      `;
+      card.appendChild(head);
+
+      const grid = document.createElement('div');
+      grid.className = 'cat-grid';
+
+      CATEGORIES.forEach(cat => {
+        const catItems = mealItems.filter(i => i.categoryId === cat.id);
+        const block = document.createElement('div');
+        block.className = 'cat-block';
+        block.style.setProperty('--cat-color', cat.color);
+        block.innerHTML = `<div class="cat-label">${cat.emoji} ${cat.label} <span class="cat-count">${catItems.length}</span></div>`;
+
+        if (catItems.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'empty-cat';
+          empty.textContent = 'Rien de prévu';
+          block.appendChild(empty);
+        } else {
+          catItems.forEach(it => {
+            const chip = document.createElement('div');
+            chip.className = 'chip';
+            chip.innerHTML = `
+              <div>
+                <span class="who">${escapeHtml(it.person)}</span>
+                <span class="what"> — ${escapeHtml(it.item)}</span>
+                ${it.note ? `<div class="note">${escapeHtml(it.note)}</div>` : ''}
+              </div>
+              <div class="chip-actions"><button class="del" title="Supprimer">✕</button></div>
+            `;
+            chip.querySelector('.del').onclick = () => removeItem(it.id);
+            block.appendChild(chip);
+          });
+        }
+        grid.appendChild(block);
+      });
+
+      card.appendChild(grid);
+      contentEl.appendChild(card);
+    });
+  }
+
+  function renderUnassigned() {
+    const contentEl = document.getElementById('noel-content');
+    contentEl.innerHTML = '';
+    const card = document.createElement('div');
+    card.className = 'card';
+    const unItems = items.filter(i => !i.mealId);
+    card.innerHTML = `<div class="form-title">À répartir</div><div class="form-sub">Ces apports n'ont pas encore de repas assigné — choisissez-en un pour chacun.</div>`;
+
+    if (unItems.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = 'Rien à répartir pour le moment 🎄';
+      card.appendChild(empty);
+    } else {
+      unItems.forEach(it => {
+        const cat = catById(it.categoryId);
+        const row = document.createElement('div');
+        row.className = 'unassigned-row';
+        row.innerHTML = `
+          <div class="unassigned-info">
+            <span class="who">${escapeHtml(it.person)}</span> — ${escapeHtml(it.item)}
+            ${it.note ? `<span style="color:var(--ink-soft); font-size:12.5px;"> (${escapeHtml(it.note)})</span>` : ''}
+            <span class="cat-tag">${cat.emoji} ${cat.label}</span>
+          </div>
+          <div class="unassigned-actions">
+            <select class="assign-select">${mealSelectHtml(true, 'Choisir un repas')}</select>
+            <button class="assign-btn">Assigner</button>
+            <button class="del" title="Supprimer">✕</button>
+          </div>
+        `;
+        row.querySelector('.assign-btn').onclick = () => {
+          const val = row.querySelector('.assign-select').value;
+          if (val) assignMeal(it.id, val);
+        };
+        row.querySelector('.del').onclick = () => removeItem(it.id);
+        card.appendChild(row);
+      });
+    }
+    contentEl.appendChild(card);
+  }
+
+  function renderPresenceList() {
+    const contentEl = document.getElementById('noel-content');
+    contentEl.innerHTML = '';
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="form-title">Qui est là, et quand</div>`;
+
+    if (presence.length === 0) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = "Personne n'a encore renseigné sa présence.";
+      card.appendChild(empty);
+    } else {
+      const sorted = [...presence].sort((a, b) => a.person.localeCompare(b.person));
+      sorted.forEach(p => {
+        const a = mealById(p.arrivalMealId);
+        const d = mealById(p.departureMealId);
+        const row = document.createElement('div');
+        row.className = 'presence-row';
+        row.innerHTML = `
+          <div class="presence-info">
+            <div class="who">${escapeHtml(p.person)}</div>
+            <div class="range">Du ${a ? a.dayLabel + ' (' + a.mealLabel + ')' : '?'} au ${d ? d.dayLabel + ' (' + d.mealLabel + ')' : '?'}</div>
+          </div>
+          <button class="del" title="Supprimer">✕</button>
+        `;
+        row.querySelector('.del').onclick = () => removePresence(p.id);
+        card.appendChild(row);
+      });
+    }
+    contentEl.appendChild(card);
+  }
+
+  function renderOverview() {
+    const contentEl = document.getElementById('noel-content');
+    contentEl.innerHTML = '';
+    const card = document.createElement('div');
+    card.className = 'card';
+    card.innerHTML = `<div class="form-title">Vue d'ensemble par repas</div><div class="form-sub">Convives attendus et apports déjà prévus.</div>`;
+
+    const wrap = document.createElement('div');
+    wrap.className = 'ov-table-wrap';
+    const table = document.createElement('table');
+    table.className = 'ov-table';
+    const thead = document.createElement('tr');
+    thead.innerHTML = `<th>Repas</th><th>👤</th>` + CATEGORIES.map(c => `<th>${c.emoji}</th>`).join('');
+    table.appendChild(thead);
+
+    MEALS.forEach(meal => {
+      const row = document.createElement('tr');
+      const heads = headcountForMeal(meal.id);
+      let html = `<td>${meal.dayLabel} · ${meal.mealLabel}</td><td class="ov-heads">${heads}</td>`;
+      CATEGORIES.forEach(cat => {
+        const count = items.filter(i => i.mealId === meal.id && i.categoryId === cat.id).length;
+        const cls = count === 0 ? 'ov-zero' : 'ov-ok';
+        html += `<td class="${cls}">${count}</td>`;
+      });
+      row.innerHTML = html;
+      table.appendChild(row);
+    });
+
+    wrap.appendChild(table);
+    card.appendChild(wrap);
+    contentEl.appendChild(card);
+
+    const unCount = items.filter(i => !i.mealId).length;
+    if (unCount > 0) {
+      const note = document.createElement('div');
+      note.className = 'footer-note';
+      note.textContent = `${unCount} apport${unCount > 1 ? 's' : ''} encore à répartir — voir l'onglet "À répartir".`;
+      contentEl.appendChild(note);
+    }
+  }
+
+  function render() {
+    renderStats();
+    renderTabs();
+    if (activeTab === TAB_UNASSIGNED) renderUnassigned();
+    else if (activeTab === TAB_PRESENCE) renderPresenceList();
+    else if (activeTab === TAB_OVERVIEW) renderOverview();
+    else renderDay(activeTab);
+  }
+
+  // ---- Firebase-backed actions ----
+  function removeItem(id) { if (itemsRef) itemsRef.child(id).remove(); }
+  function assignMeal(id, mealId) { if (itemsRef) itemsRef.child(id).update({ mealId: mealId || null }); }
+  function removePresence(id) { if (presenceRef) presenceRef.child(id).remove(); }
+
+  document.getElementById('noel-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const person = document.getElementById('noel-person').value.trim();
+    const item = document.getElementById('noel-item').value.trim();
+    const mealId = document.getElementById('noel-meal').value;
+    const categoryId = document.getElementById('noel-category').value;
+    const note = document.getElementById('noel-note').value.trim();
+    if (!person || !item) return;
+    const msgEl = document.getElementById('noel-form-msg');
+
+    if (!itemsRef) { msgEl.textContent = "Firebase n'est pas configuré."; return; }
+
+    itemsRef.push({ person, item, note, mealId: mealId || null, categoryId, createdAt: Date.now() })
+      .then(() => { msgEl.textContent = `Merci ${person}, c'est noté !`; })
+      .catch(() => { msgEl.textContent = "L'enregistrement a échoué, réessayez."; });
+
+    document.getElementById('noel-item').value = '';
+    document.getElementById('noel-note').value = '';
+    activeTab = mealId ? mealById(mealId).day : TAB_UNASSIGNED;
+    setTimeout(() => { msgEl.textContent = ''; }, 3500);
+  });
+
+  document.getElementById('presence-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const person = document.getElementById('pres-person').value.trim();
+    const arrivalMealId = document.getElementById('pres-arrival').value;
+    const departureMealId = document.getElementById('pres-departure').value;
+    if (!person) return;
+    const msgEl = document.getElementById('pres-form-msg');
+
+    if (mealById(arrivalMealId).order > mealById(departureMealId).order) {
+      msgEl.textContent = "La date d'arrivée doit précéder la date de départ.";
+      return;
+    }
+    if (!presenceRef) { msgEl.textContent = "Firebase n'est pas configuré."; return; }
+
+    presenceRef.child(slugify(person)).set({ person, arrivalMealId, departureMealId })
+      .then(() => { msgEl.textContent = `Merci ${person}, présence enregistrée !`; })
+      .catch(() => { msgEl.textContent = "L'enregistrement a échoué, réessayez."; });
+
+    activeTab = TAB_PRESENCE;
+    setTimeout(() => { msgEl.textContent = ''; }, 3500);
+  });
+
+  // ---- Boot ----
+  render();
+
+  if (configOk) {
+    try {
+      firebase.initializeApp(firebaseConfig);
+      db = firebase.database();
+      itemsRef = db.ref('items');
+      presenceRef = db.ref('presence');
+
+      const connDot = document.getElementById('conn-dot');
+      const connLabel = document.getElementById('conn-label');
+      db.ref('.info/connected').on('value', snap => {
+        const isOk = snap.val() === true;
+        connDot.classList.toggle('ok', isOk);
+        connLabel.textContent = isOk ? 'Connecté — données partagées en direct' : 'Connexion en cours…';
+      });
+
+      itemsRef.on('value', snapshot => {
+        const val = snapshot.val() || {};
+        items = Object.keys(val).map(key => ({ id: key, ...val[key] }));
+        render();
+      });
+
+      presenceRef.on('value', snapshot => {
+        const val = snapshot.val() || {};
+        presence = Object.keys(val).map(key => ({ id: key, ...val[key] }));
+        render();
+      });
+    } catch (err) {
+      document.getElementById('conn-label').textContent = 'Erreur de connexion à Firebase — vérifie la configuration.';
+    }
+  } else {
+    document.getElementById('conn-label').textContent = 'Firebase non configuré';
+  }
+})();
+</script>
+</body>
+</html>
