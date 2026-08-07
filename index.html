@@ -325,12 +325,18 @@
     { id: 'dessert', label: 'Dessert', emoji: '🍰', color: '#7B5A82' },
     { id: 'autre',   label: 'Autre',   emoji: '🎁', color: '#55708A' },
   ];
+  const TASKS = [
+    { id: 'couverts',  label: 'Couverts',  emoji: '🍴', color: '#D89B3B' },
+    { id: 'vaisselle', label: 'Vaisselle', emoji: '🧽', color: '#55708A' },
+  ];
   const TAB_UNASSIGNED = '__unassigned__';
   const TAB_PRESENCE = '__presence__';
+  const TAB_CHORES = '__chores__';
   const TAB_OVERVIEW = '__overview__';
 
   let items = [];
   let presence = [];
+  let chores = {}; // { [mealId]: { couverts: [names], vaisselle: [names] } }
   let activeTab = '24';
 
   // ---- Config check ----
@@ -347,6 +353,7 @@
   let db = null;
   let itemsRef = null;
   let presenceRef = null;
+  let choresRef = null;
 
   function slugify(name) {
     return (name || '').trim().toLowerCase()
@@ -378,13 +385,64 @@
   function catById(id) { return CATEGORIES.find(c => c.id === id); }
 
   function headcountForMeal(mealId) {
+    return presentPeopleForMeal(mealId).length;
+  }
+
+  function presentPeopleForMeal(mealId) {
     const meal = mealById(mealId);
-    return presence.filter(p => {
+    const names = presence.filter(p => {
       const a = mealById(p.arrivalMealId);
       const d = mealById(p.departureMealId);
       if (!a || !d) return false;
       return a.order <= meal.order && meal.order <= d.order;
-    }).length;
+    }).map(p => p.person);
+    return Array.from(new Set(names));
+  }
+
+  function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+  }
+
+  function generateChores() {
+    const allNames = Array.from(new Set(presence.map(p => p.person)));
+    if (allNames.length === 0) {
+      alert("Merci de d'abord remplir la feuille de présence — c'est elle qui indique qui est là à chaque repas.");
+      return;
+    }
+    const ok = confirm("Générer une nouvelle répartition aléatoire des équipes de corvées pour tous les repas ? Ça remplace l'équipe actuelle, pour tout le monde.");
+    if (!ok) return;
+
+    const load = {};
+    allNames.forEach(n => { load[n] = 0; });
+
+    const pickTeam = (pool, size) => {
+      const team = shuffle(pool)
+        .sort((a, b) => load[a] - load[b])
+        .slice(0, Math.min(size, pool.length));
+      team.forEach(n => { load[n] += 1; });
+      return team;
+    };
+
+    const result = {};
+    MEALS.forEach(meal => {
+      let eligible = presentPeopleForMeal(meal.id);
+      if (eligible.length === 0) eligible = allNames.slice();
+
+      const couverts = pickTeam(eligible, 5);
+      const remaining = eligible.filter(n => !couverts.includes(n));
+      const vaisselle = pickTeam(remaining.length > 0 ? remaining : eligible, 5);
+
+      result[meal.id] = { couverts, vaisselle };
+    });
+
+    if (choresRef) {
+      choresRef.set(result).catch(() => alert("La génération a échoué, réessaie."));
+    }
   }
 
   function escapeHtml(str) {
@@ -427,6 +485,12 @@
     presBtn.textContent = 'Présence';
     presBtn.onclick = () => { activeTab = TAB_PRESENCE; render(); };
     tabsEl.appendChild(presBtn);
+
+    const choresBtn = document.createElement('button');
+    choresBtn.className = 'tab tab-special' + (activeTab === TAB_CHORES ? ' active' : '');
+    choresBtn.textContent = '🧹 Tâches';
+    choresBtn.onclick = () => { activeTab = TAB_CHORES; render(); };
+    tabsEl.appendChild(choresBtn);
 
     const ovBtn = document.createElement('button');
     ovBtn.className = 'tab tab-special' + (activeTab === TAB_OVERVIEW ? ' active' : '');
@@ -570,6 +634,66 @@
     contentEl.appendChild(card);
   }
 
+  function renderChores() {
+    const contentEl = document.getElementById('noel-content');
+    contentEl.innerHTML = '';
+
+    const actionCard = document.createElement('div');
+    actionCard.className = 'card';
+    const hasChores = Object.keys(chores).length > 0;
+    actionCard.innerHTML = `
+      <div class="form-title">Équipes de corvées</div>
+      <div class="form-sub">5 personnes tirées au sort pour les couverts, 5 pour la vaisselle, à chaque repas — en fonction de qui est présent (voir la feuille de présence). L'algorithme équilibre la charge entre tout le monde.</div>
+      <button class="submit-btn pine" id="generate-chores-btn">🎲 ${hasChores ? 'Régénérer' : 'Générer'} les équipes</button>
+    `;
+    actionCard.querySelector('#generate-chores-btn').onclick = generateChores;
+    contentEl.appendChild(actionCard);
+
+    if (!hasChores) {
+      const empty = document.createElement('div');
+      empty.className = 'empty-state';
+      empty.textContent = "Pas encore d'équipes générées.";
+      contentEl.appendChild(empty);
+      return;
+    }
+
+    MEALS.forEach(meal => {
+      const mealChores = chores[meal.id] || { couverts: [], vaisselle: [] };
+      const card = document.createElement('div');
+      card.className = 'card meal-card';
+      card.innerHTML = `<div class="meal-head"><div class="meal-title">${meal.mealLabel}</div><div class="meal-badges"><div class="meal-badge heads">${meal.dayLabel}</div></div></div>`;
+
+      const grid = document.createElement('div');
+      grid.className = 'cat-grid';
+
+      TASKS.forEach(task => {
+        const team = mealChores[task.id] || [];
+        const block = document.createElement('div');
+        block.className = 'cat-block';
+        block.style.setProperty('--cat-color', task.color);
+        block.innerHTML = `<div class="cat-label">${task.emoji} ${task.label} <span class="cat-count">${team.length}</span></div>`;
+
+        if (team.length === 0) {
+          const empty = document.createElement('div');
+          empty.className = 'empty-cat';
+          empty.textContent = 'Personne assigné';
+          block.appendChild(empty);
+        } else {
+          team.forEach(name => {
+            const chip = document.createElement('div');
+            chip.className = 'chip';
+            chip.innerHTML = `<div><span class="who">${escapeHtml(name)}</span></div>`;
+            block.appendChild(chip);
+          });
+        }
+        grid.appendChild(block);
+      });
+
+      card.appendChild(grid);
+      contentEl.appendChild(card);
+    });
+  }
+
   function renderOverview() {
     const contentEl = document.getElementById('noel-content');
     contentEl.innerHTML = '';
@@ -616,6 +740,7 @@
     renderTabs();
     if (activeTab === TAB_UNASSIGNED) renderUnassigned();
     else if (activeTab === TAB_PRESENCE) renderPresenceList();
+    else if (activeTab === TAB_CHORES) renderChores();
     else if (activeTab === TAB_OVERVIEW) renderOverview();
     else renderDay(activeTab);
   }
@@ -678,6 +803,7 @@
       db = firebase.database();
       itemsRef = db.ref('items');
       presenceRef = db.ref('presence');
+      choresRef = db.ref('chores');
 
       const connDot = document.getElementById('conn-dot');
       const connLabel = document.getElementById('conn-label');
@@ -696,6 +822,11 @@
       presenceRef.on('value', snapshot => {
         const val = snapshot.val() || {};
         presence = Object.keys(val).map(key => ({ id: key, ...val[key] }));
+        render();
+      });
+
+      choresRef.on('value', snapshot => {
+        chores = snapshot.val() || {};
         render();
       });
     } catch (err) {
