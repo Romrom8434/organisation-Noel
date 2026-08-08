@@ -190,16 +190,24 @@
     font-size: 12.5px; color: var(--amber-dark); margin-top: 10px;
     background: #FBF1DE; padding: 8px 10px; border-radius: 8px;
   }
+  .chore-group { margin-bottom: 14px; }
+  .chore-group:last-child { margin-bottom: 0; }
+  .chore-group-label {
+    font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--ink-soft); margin-bottom: 8px;
+  }
 
   .loading, .empty-state { text-align: center; color: var(--ink-soft); padding: 30px 10px; font-size: 14px; }
-  .unassigned-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--line); flex-wrap: wrap; }
+  .unassigned-row { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--line); flex-wrap: wrap; }
   .unassigned-row:last-child { border-bottom: none; }
   .unassigned-info { font-size: 13.5px; }
   .unassigned-info .who { font-weight: 600; color: var(--pine); }
   .unassigned-info .cat-tag { font-size: 10.5px; background: var(--line); color: var(--ink-soft); border-radius: 999px; padding: 1px 7px; margin-left: 6px; }
-  .unassigned-actions { display: flex; gap: 6px; align-items: center; }
-  .unassigned-actions select { padding: 6px 8px; font-size: 12.5px; width: auto; }
-  .assign-btn { font-size: 12px; font-weight: 600; background: var(--sage); color: #fff; border: none; border-radius: 7px; padding: 6px 10px; cursor: pointer; }
+  .unassigned-actions-multi { flex-basis: 100%; display: flex; flex-direction: column; gap: 8px; margin-top: 4px; }
+  .meal-toggle-group.compact { gap: 4px; }
+  .meal-toggle.small { padding: 4px 9px; font-size: 11px; }
+  .unassigned-btn-row { display: flex; gap: 8px; align-items: center; }
+  .assign-btn { font-size: 12px; font-weight: 600; background: var(--sage); color: #fff; border: none; border-radius: 7px; padding: 6px 14px; cursor: pointer; }
   .assign-btn:hover { opacity: 0.88; }
 
   /* ---- Presence ---- */
@@ -356,10 +364,22 @@
     { id: 'dessert', label: 'Dessert', emoji: '🍰', color: '#7B5A82' },
     { id: 'autre',   label: 'Autre',   emoji: '🎁', color: '#55708A' },
   ];
-  const TASKS = [
-    { id: 'couverts',  label: 'Couverts',  emoji: '🍴', color: '#D89B3B' },
-    { id: 'vaisselle', label: 'Vaisselle', emoji: '🧽', color: '#55708A' },
-  ];
+  const TASK_DEFS = {
+    cuisine:       { label: 'Cuisine',        emoji: '👩‍🍳', color: '#D89B3B' },
+    mise_de_table: { label: 'Mise de table',  emoji: '🍽️', color: '#8B3A3A' },
+    aperitif:      { label: 'Apéritif',       emoji: '🥂', color: '#C9A13B' },
+    debarrassage:  { label: 'Débarrassage',   emoji: '🧺', color: '#55708A' },
+    menage:        { label: 'Ménage',         emoji: '🧹', color: '#7B5A82' },
+  };
+
+  // Petit-déj : une seule équipe (débarrassage + ménage).
+  // Midi / soir : deux équipes — une "avant repas" (cuisine, mise de table, apéritif)
+  // et une "après repas" (débarrassage, ménage).
+  function taskGroupsForMeal(meal) {
+    const moment = meal.id.split('-')[1];
+    if (moment === 'matin') return [['debarrassage', 'menage']];
+    return [['cuisine', 'mise_de_table', 'aperitif'], ['debarrassage', 'menage']];
+  }
   const TAB_UNASSIGNED = '__unassigned__';
   const TAB_PRESENCE = '__presence__';
   const TAB_CHORES = '__chores__';
@@ -367,7 +387,7 @@
 
   let items = [];
   let presence = [];
-  let chores = {}; // { [mealId]: { couverts: [names], vaisselle: [names] } }
+  let chores = {}; // { [mealId]: { [taskId]: [names] } } — taskId dépend du type de repas
   let activeTab = '24';
   let dragPayload = null;       // {mealId, taskId, name} pendant un glisser-déposer souris
   let selectedChoreChip = null; // {mealId, taskId, name} pendant une sélection tactile (mobile)
@@ -401,29 +421,33 @@
     return html;
   };
 
-  const selectedMeals = new Set();
-  const mealToggleGroup = document.getElementById('noel-meal-toggles');
-  (function buildMealToggles() {
+  function buildMealToggles(container, selectedSet, opts) {
+    container.innerHTML = '';
     let lastDay = null;
     MEALS.forEach(m => {
       if (m.day !== lastDay) {
         const cap = document.createElement('span');
         cap.className = 'day-caption';
         cap.textContent = m.dayLabel;
-        mealToggleGroup.appendChild(cap);
+        container.appendChild(cap);
         lastDay = m.day;
       }
       const btn = document.createElement('button');
       btn.type = 'button';
-      btn.className = 'meal-toggle';
+      btn.className = 'meal-toggle' + (opts && opts.small ? ' small' : '');
       btn.textContent = m.mealLabel;
+      if (selectedSet.has(m.id)) btn.classList.add('active');
       btn.onclick = () => {
-        if (selectedMeals.has(m.id)) { selectedMeals.delete(m.id); btn.classList.remove('active'); }
-        else { selectedMeals.add(m.id); btn.classList.add('active'); }
+        if (selectedSet.has(m.id)) { selectedSet.delete(m.id); btn.classList.remove('active'); }
+        else { selectedSet.add(m.id); btn.classList.add('active'); }
       };
-      mealToggleGroup.appendChild(btn);
+      container.appendChild(btn);
     });
-  })();
+  }
+
+  const selectedMeals = new Set();
+  const mealToggleGroup = document.getElementById('noel-meal-toggles');
+  buildMealToggles(mealToggleGroup, selectedMeals);
 
   document.getElementById('pres-arrival').innerHTML = mealSelectHtml(false);
   document.getElementById('pres-departure').innerHTML = mealSelectHtml(false);
@@ -481,16 +505,20 @@
     }
     if (teams.length === 0) return;
 
-    // Les mêmes équipes tournent ensuite sur les tâches, repas après repas.
+    // Les mêmes équipes tournent ensuite sur les tâches, repas après repas —
+    // chaque groupe de tâches (avant / après repas, ou l'unique groupe du matin)
+    // est confié en bloc à une équipe.
     let cursor = 0;
     const result = {};
     MEALS.forEach(meal => {
-      const couvertsTeam = teams[cursor % teams.length]; cursor++;
-      let vaisselleTeam = teams[cursor % teams.length]; cursor++;
-      if (teams.length > 1 && vaisselleTeam === couvertsTeam) {
-        vaisselleTeam = teams[cursor % teams.length]; cursor++;
-      }
-      result[meal.id] = { couverts: couvertsTeam.slice(), vaisselle: vaisselleTeam.slice() };
+      const groups = taskGroupsForMeal(meal);
+      const mealResult = {};
+      groups.forEach(taskIds => {
+        const team = teams[cursor % teams.length];
+        cursor++;
+        taskIds.forEach(taskId => { mealResult[taskId] = team.slice(); });
+      });
+      result[meal.id] = mealResult;
     });
 
     chores = result;
@@ -503,7 +531,7 @@
     if (fromMealId === toMealId && fromTaskId === toTaskId) return;
     if (!chores[fromMealId] || !chores[fromMealId][fromTaskId]) return;
     chores[fromMealId][fromTaskId] = chores[fromMealId][fromTaskId].filter(n => n !== name);
-    if (!chores[toMealId]) chores[toMealId] = { couverts: [], vaisselle: [] };
+    if (!chores[toMealId]) chores[toMealId] = {};
     if (!chores[toMealId][toTaskId]) chores[toMealId][toTaskId] = [];
     if (!chores[toMealId][toTaskId].includes(name)) chores[toMealId][toTaskId].push(name);
     persistChores();
@@ -641,7 +669,7 @@
     const card = document.createElement('div');
     card.className = 'card';
     const unItems = items.filter(i => !i.mealId);
-    card.innerHTML = `<div class="form-title">À répartir</div><div class="form-sub">Ces apports n'ont pas encore de repas assigné — choisissez-en un pour chacun.</div>`;
+    card.innerHTML = `<div class="form-title">À répartir</div><div class="form-sub">Ces apports n'ont pas encore de repas assigné — cochez un ou plusieurs repas puis validez (coché plusieurs fois = dupliqué à chaque repas, sans tout ressaisir).</div>`;
 
     if (unItems.length === 0) {
       const empty = document.createElement('div');
@@ -659,17 +687,36 @@
             ${it.note ? `<span style="color:var(--ink-soft); font-size:12.5px;"> (${escapeHtml(it.note)})</span>` : ''}
             <span class="cat-tag">${cat.emoji} ${cat.label}</span>
           </div>
-          <div class="unassigned-actions">
-            <select class="assign-select">${mealSelectHtml(true, 'Choisir un repas')}</select>
-            <button class="assign-btn">Assigner</button>
-            <button class="del" title="Supprimer">✕</button>
-          </div>
         `;
-        row.querySelector('.assign-btn').onclick = () => {
-          const val = row.querySelector('.assign-select').value;
-          if (val) assignMeal(it.id, val);
+
+        const actionsWrap = document.createElement('div');
+        actionsWrap.className = 'unassigned-actions-multi';
+
+        const toggleContainer = document.createElement('div');
+        toggleContainer.className = 'meal-toggle-group compact';
+        const rowSelected = new Set();
+        buildMealToggles(toggleContainer, rowSelected, { small: true });
+        actionsWrap.appendChild(toggleContainer);
+
+        const btnRow = document.createElement('div');
+        btnRow.className = 'unassigned-btn-row';
+        const assignBtn = document.createElement('button');
+        assignBtn.className = 'assign-btn';
+        assignBtn.textContent = 'Assigner';
+        assignBtn.onclick = () => {
+          if (rowSelected.size === 0) return;
+          assignMealsToItem(it, Array.from(rowSelected));
         };
-        row.querySelector('.del').onclick = () => removeItem(it.id);
+        const delBtn = document.createElement('button');
+        delBtn.className = 'del';
+        delBtn.title = 'Supprimer';
+        delBtn.textContent = '✕';
+        delBtn.onclick = () => removeItem(it.id);
+        btnRow.appendChild(assignBtn);
+        btnRow.appendChild(delBtn);
+        actionsWrap.appendChild(btnRow);
+
+        row.appendChild(actionsWrap);
         card.appendChild(row);
       });
     }
@@ -718,7 +765,7 @@
     const hasChores = Object.keys(chores).length > 0;
     actionCard.innerHTML = `
       <div class="form-title">Équipes de corvées</div>
-      <div class="form-sub">Des équipes fixes de 5 personnes tournent sur les couverts et la vaisselle à chaque repas — toujours les mêmes coéquipiers. Pour ajuster : glissez un prénom vers une autre case (souris), ou touchez un prénom puis touchez la case de destination (mobile).</div>
+      <div class="form-sub">Chaque repas a une ou deux équipes fixes de 5 personnes (une seule pour les petits-déj ; deux pour le midi et le soir : une avant le repas, une après) — toujours les mêmes coéquipiers. Pour ajuster : glissez un prénom vers une autre case (souris), ou touchez un prénom puis touchez la case de destination (mobile).</div>
       <button class="submit-btn pine" id="generate-chores-btn">🎲 ${hasChores ? 'Régénérer' : 'Générer'} les équipes</button>
       ${selectedChoreChip ? `<div class="chore-hint">👉 Déplacer <strong>${escapeHtml(selectedChoreChip.name)}</strong> : touchez la case de destination (ou touchez-le à nouveau pour annuler).</div>` : ''}
     `;
@@ -743,71 +790,88 @@
         lastDay = meal.day;
       }
 
-      const mealChores = chores[meal.id] || { couverts: [], vaisselle: [] };
+      const mealChores = chores[meal.id] || {};
       const card = document.createElement('div');
       card.className = 'card meal-card';
       card.innerHTML = `<div class="meal-head"><div class="meal-title">${meal.mealLabel}</div></div>`;
 
-      const grid = document.createElement('div');
-      grid.className = 'cat-grid';
+      const groups = taskGroupsForMeal(meal);
+      const groupLabels = groups.length > 1 ? ['Avant le repas', 'Après le repas'] : [null];
 
-      TASKS.forEach(task => {
-        const team = mealChores[task.id] || [];
-        const block = document.createElement('div');
-        block.className = 'cat-block chore-drop';
-        block.style.setProperty('--cat-color', task.color);
-        block.innerHTML = `<div class="cat-label">${task.emoji} ${task.label} <span class="cat-count">${team.length}</span></div>`;
-
-        const list = document.createElement('div');
-        if (team.length === 0) {
-          list.innerHTML = '<div class="empty-cat">Personne assigné</div>';
-        } else {
-          team.forEach(name => {
-            const isSelected = !!(selectedChoreChip && selectedChoreChip.mealId === meal.id &&
-              selectedChoreChip.taskId === task.id && selectedChoreChip.name === name);
-            const chip = document.createElement('div');
-            chip.className = 'chip chore-chip' + (isSelected ? ' selected' : '');
-            chip.draggable = true;
-            chip.innerHTML = `
-              <div><span class="who">${escapeHtml(name)}</span></div>
-              <div class="chip-actions"><button class="del" title="Retirer">✕</button></div>
-            `;
-            chip.addEventListener('dragstart', () => {
-              dragPayload = { mealId: meal.id, taskId: task.id, name };
-            });
-            chip.addEventListener('click', (ev) => {
-              if (ev.target.closest('.del')) return;
-              selectedChoreChip = isSelected ? null : { mealId: meal.id, taskId: task.id, name };
-              render();
-            });
-            chip.querySelector('.del').onclick = () => removeChoreChip(meal.id, task.id, name);
-            list.appendChild(chip);
-          });
+      groups.forEach((taskIds, gi) => {
+        const groupWrap = document.createElement('div');
+        groupWrap.className = 'chore-group';
+        if (groupLabels[gi]) {
+          const label = document.createElement('div');
+          label.className = 'chore-group-label';
+          label.textContent = groupLabels[gi];
+          groupWrap.appendChild(label);
         }
-        block.appendChild(list);
 
-        block.addEventListener('dragover', (ev) => { ev.preventDefault(); block.classList.add('drop-hover'); });
-        block.addEventListener('dragleave', () => block.classList.remove('drop-hover'));
-        block.addEventListener('drop', (ev) => {
-          ev.preventDefault();
-          block.classList.remove('drop-hover');
-          if (dragPayload) {
-            moveChoreChip(dragPayload.mealId, dragPayload.taskId, dragPayload.name, meal.id, task.id);
-            dragPayload = null;
+        const grid = document.createElement('div');
+        grid.className = 'cat-grid';
+
+        taskIds.forEach(taskId => {
+          const def = TASK_DEFS[taskId];
+          const team = mealChores[taskId] || [];
+          const block = document.createElement('div');
+          block.className = 'cat-block chore-drop';
+          block.style.setProperty('--cat-color', def.color);
+          block.innerHTML = `<div class="cat-label">${def.emoji} ${def.label} <span class="cat-count">${team.length}</span></div>`;
+
+          const list = document.createElement('div');
+          if (team.length === 0) {
+            list.innerHTML = '<div class="empty-cat">Personne assigné</div>';
+          } else {
+            team.forEach(name => {
+              const isSelected = !!(selectedChoreChip && selectedChoreChip.mealId === meal.id &&
+                selectedChoreChip.taskId === taskId && selectedChoreChip.name === name);
+              const chip = document.createElement('div');
+              chip.className = 'chip chore-chip' + (isSelected ? ' selected' : '');
+              chip.draggable = true;
+              chip.innerHTML = `
+                <div><span class="who">${escapeHtml(name)}</span></div>
+                <div class="chip-actions"><button class="del" title="Retirer">✕</button></div>
+              `;
+              chip.addEventListener('dragstart', () => {
+                dragPayload = { mealId: meal.id, taskId, name };
+              });
+              chip.addEventListener('click', (ev) => {
+                if (ev.target.closest('.del')) return;
+                selectedChoreChip = isSelected ? null : { mealId: meal.id, taskId, name };
+                render();
+              });
+              chip.querySelector('.del').onclick = () => removeChoreChip(meal.id, taskId, name);
+              list.appendChild(chip);
+            });
           }
-        });
-        block.addEventListener('click', (ev) => {
-          if (ev.target.closest('.chore-chip')) return;
-          if (selectedChoreChip) {
-            moveChoreChip(selectedChoreChip.mealId, selectedChoreChip.taskId, selectedChoreChip.name, meal.id, task.id);
-            selectedChoreChip = null;
-          }
+          block.appendChild(list);
+
+          block.addEventListener('dragover', (ev) => { ev.preventDefault(); block.classList.add('drop-hover'); });
+          block.addEventListener('dragleave', () => block.classList.remove('drop-hover'));
+          block.addEventListener('drop', (ev) => {
+            ev.preventDefault();
+            block.classList.remove('drop-hover');
+            if (dragPayload) {
+              moveChoreChip(dragPayload.mealId, dragPayload.taskId, dragPayload.name, meal.id, taskId);
+              dragPayload = null;
+            }
+          });
+          block.addEventListener('click', (ev) => {
+            if (ev.target.closest('.chore-chip')) return;
+            if (selectedChoreChip) {
+              moveChoreChip(selectedChoreChip.mealId, selectedChoreChip.taskId, selectedChoreChip.name, meal.id, taskId);
+              selectedChoreChip = null;
+            }
+          });
+
+          grid.appendChild(block);
         });
 
-        grid.appendChild(block);
+        groupWrap.appendChild(grid);
+        card.appendChild(groupWrap);
       });
 
-      card.appendChild(grid);
       contentEl.appendChild(card);
     });
   }
@@ -866,6 +930,18 @@
   // ---- Firebase-backed actions ----
   function removeItem(id) { if (itemsRef) itemsRef.child(id).remove(); }
   function assignMeal(id, mealId) { if (itemsRef) itemsRef.child(id).update({ mealId: mealId || null }); }
+
+  function assignMealsToItem(it, mealIds) {
+    if (!itemsRef || mealIds.length === 0) return;
+    const [first, ...rest] = mealIds;
+    itemsRef.child(it.id).update({ mealId: first });
+    rest.forEach(mealId => {
+      itemsRef.push({
+        person: it.person, item: it.item, note: it.note || '',
+        mealId, categoryId: it.categoryId, createdAt: Date.now()
+      });
+    });
+  }
   function removePresence(id) { if (presenceRef) presenceRef.child(id).remove(); }
 
   document.getElementById('noel-form').addEventListener('submit', function(e) {
