@@ -158,7 +158,40 @@
   .chip button.del:hover { opacity: 1; }
   .empty-cat { font-size: 12.5px; color: #B8AF98; font-style: italic; padding: 4px 0; }
 
-  /* ---- Unassigned list ---- */
+  /* ---- Multi-select meal toggles ---- */
+  .meal-toggle-group { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+  .day-caption {
+    flex-basis: 100%; font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.05em; color: var(--ink-soft); margin-top: 8px;
+  }
+  .day-caption:first-child { margin-top: 0; }
+  .meal-toggle {
+    font-family: 'Inter', sans-serif; font-size: 12.5px; font-weight: 600;
+    padding: 7px 12px; border-radius: 999px; border: 1px solid var(--line); background: #fff;
+    color: var(--ink-soft); cursor: pointer; transition: all .15s;
+  }
+  .meal-toggle.active { background: var(--amber); border-color: var(--amber); color: #2A1C05; }
+  .meal-toggle:hover:not(.active) { border-color: var(--amber); color: var(--pine); }
+
+  /* ---- Chores: day dividers, drag & drop, selection ---- */
+  .day-divider {
+    font-family: 'Fraunces', serif; font-weight: 600; font-size: 15px; color: var(--pine-light);
+    margin: 20px 4px 8px; padding-bottom: 5px; border-bottom: 1px solid var(--line);
+  }
+  .day-divider:first-child { margin-top: 0; }
+  .cat-block.chore-drop { cursor: pointer; border-radius: 10px; padding: 9px 8px; transition: background .15s; }
+  .cat-block.chore-drop.drop-hover { background: #F1E9D6; }
+  .chore-chip { cursor: grab; }
+  .chore-chip.selected {
+    outline: 2px solid var(--amber); outline-offset: 1px; border-radius: 8px;
+    background: #FFF6E4; padding-left: 6px; padding-right: 2px;
+  }
+  .chore-hint {
+    font-size: 12.5px; color: var(--amber-dark); margin-top: 10px;
+    background: #FBF1DE; padding: 8px 10px; border-radius: 8px;
+  }
+
+  .loading, .empty-state { text-align: center; color: var(--ink-soft); padding: 30px 10px; font-size: 14px; }
   .unassigned-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 0; border-bottom: 1px dashed var(--line); flex-wrap: wrap; }
   .unassigned-row:last-child { border-bottom: none; }
   .unassigned-info { font-size: 13.5px; }
@@ -184,8 +217,6 @@
   .ov-zero { color: #C7A2A2; font-weight: 700; }
   .ov-ok { color: var(--sage); font-weight: 700; }
   .ov-table-wrap { overflow-x: auto; }
-
-  .loading, .empty-state { text-align: center; color: var(--ink-soft); padding: 30px 10px; font-size: 14px; }
 
   .footer-note { text-align: center; font-size: 12px; color: #B0A88F; margin-top: 10px; }
 
@@ -237,18 +268,18 @@
         </div>
         <div class="field-row">
           <div class="field">
-            <label for="noel-meal">Repas concerné (optionnel)</label>
-            <select id="noel-meal"></select>
-          </div>
-          <div class="field">
             <label for="noel-category">Catégorie</label>
             <select id="noel-category" required></select>
+          </div>
+          <div class="field">
+            <label for="noel-note">Précision (optionnel)</label>
+            <input type="text" id="noel-note" placeholder="ex. pour 8 personnes, sans gluten...">
           </div>
         </div>
         <div class="field-row">
           <div class="field full">
-            <label for="noel-note">Précision (optionnel)</label>
-            <input type="text" id="noel-note" placeholder="ex. pour 8 personnes, sans gluten...">
+            <label for="noel-meal-toggles">Repas concernés (optionnel — laisser vide pour "à répartir", ou cocher plusieurs repas si vous apportez la même chose plusieurs fois)</label>
+            <div class="meal-toggle-group" id="noel-meal-toggles"></div>
           </div>
         </div>
         <button type="submit" class="submit-btn">Ajouter à la liste</button>
@@ -338,6 +369,8 @@
   let presence = [];
   let chores = {}; // { [mealId]: { couverts: [names], vaisselle: [names] } }
   let activeTab = '24';
+  let dragPayload = null;       // {mealId, taskId, name} pendant un glisser-déposer souris
+  let selectedChoreChip = null; // {mealId, taskId, name} pendant une sélection tactile (mobile)
 
   // ---- Config check ----
   const configOk = Object.values(firebaseConfig).every(v => typeof v === 'string' && !v.includes('REMPLACE_MOI'));
@@ -368,7 +401,30 @@
     return html;
   };
 
-  document.getElementById('noel-meal').innerHTML = mealSelectHtml(true, 'À répartir plus tard');
+  const selectedMeals = new Set();
+  const mealToggleGroup = document.getElementById('noel-meal-toggles');
+  (function buildMealToggles() {
+    let lastDay = null;
+    MEALS.forEach(m => {
+      if (m.day !== lastDay) {
+        const cap = document.createElement('span');
+        cap.className = 'day-caption';
+        cap.textContent = m.dayLabel;
+        mealToggleGroup.appendChild(cap);
+        lastDay = m.day;
+      }
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'meal-toggle';
+      btn.textContent = m.mealLabel;
+      btn.onclick = () => {
+        if (selectedMeals.has(m.id)) { selectedMeals.delete(m.id); btn.classList.remove('active'); }
+        else { selectedMeals.add(m.id); btn.classList.add('active'); }
+      };
+      mealToggleGroup.appendChild(btn);
+    });
+  })();
+
   document.getElementById('pres-arrival').innerHTML = mealSelectHtml(false);
   document.getElementById('pres-departure').innerHTML = mealSelectHtml(false);
   document.getElementById('pres-departure').value = MEALS[MEALS.length - 1].id;
@@ -414,35 +470,54 @@
       alert("Merci de d'abord remplir la feuille de présence — c'est elle qui indique qui est là à chaque repas.");
       return;
     }
-    const ok = confirm("Générer une nouvelle répartition aléatoire des équipes de corvées pour tous les repas ? Ça remplace l'équipe actuelle, pour tout le monde.");
+    const ok = confirm("Générer de nouvelles équipes fixes de corvées ? Ça remplace la répartition actuelle (y compris vos ajustements manuels), pour tout le monde.");
     if (!ok) return;
 
-    const load = {};
-    allNames.forEach(n => { load[n] = 0; });
+    // Équipes fixes de 5 personnes, tirées une seule fois.
+    const shuffled = shuffle(allNames);
+    const teams = [];
+    for (let i = 0; i < shuffled.length; i += 5) {
+      teams.push(shuffled.slice(i, i + 5));
+    }
+    if (teams.length === 0) return;
 
-    const pickTeam = (pool, size) => {
-      const team = shuffle(pool)
-        .sort((a, b) => load[a] - load[b])
-        .slice(0, Math.min(size, pool.length));
-      team.forEach(n => { load[n] += 1; });
-      return team;
-    };
-
+    // Les mêmes équipes tournent ensuite sur les tâches, repas après repas.
+    let cursor = 0;
     const result = {};
     MEALS.forEach(meal => {
-      let eligible = presentPeopleForMeal(meal.id);
-      if (eligible.length === 0) eligible = allNames.slice();
-
-      const couverts = pickTeam(eligible, 5);
-      const remaining = eligible.filter(n => !couverts.includes(n));
-      const vaisselle = pickTeam(remaining.length > 0 ? remaining : eligible, 5);
-
-      result[meal.id] = { couverts, vaisselle };
+      const couvertsTeam = teams[cursor % teams.length]; cursor++;
+      let vaisselleTeam = teams[cursor % teams.length]; cursor++;
+      if (teams.length > 1 && vaisselleTeam === couvertsTeam) {
+        vaisselleTeam = teams[cursor % teams.length]; cursor++;
+      }
+      result[meal.id] = { couverts: couvertsTeam.slice(), vaisselle: vaisselleTeam.slice() };
     });
 
-    if (choresRef) {
-      choresRef.set(result).catch(() => alert("La génération a échoué, réessaie."));
-    }
+    chores = result;
+    selectedChoreChip = null;
+    render();
+    if (choresRef) choresRef.set(result).catch(() => alert("La génération a échoué, réessaie."));
+  }
+
+  function moveChoreChip(fromMealId, fromTaskId, name, toMealId, toTaskId) {
+    if (fromMealId === toMealId && fromTaskId === toTaskId) return;
+    if (!chores[fromMealId] || !chores[fromMealId][fromTaskId]) return;
+    chores[fromMealId][fromTaskId] = chores[fromMealId][fromTaskId].filter(n => n !== name);
+    if (!chores[toMealId]) chores[toMealId] = { couverts: [], vaisselle: [] };
+    if (!chores[toMealId][toTaskId]) chores[toMealId][toTaskId] = [];
+    if (!chores[toMealId][toTaskId].includes(name)) chores[toMealId][toTaskId].push(name);
+    persistChores();
+  }
+
+  function removeChoreChip(mealId, taskId, name) {
+    if (!chores[mealId] || !chores[mealId][taskId]) return;
+    chores[mealId][taskId] = chores[mealId][taskId].filter(n => n !== name);
+    persistChores();
+  }
+
+  function persistChores() {
+    render();
+    if (choresRef) choresRef.set(chores).catch(() => {});
   }
 
   function escapeHtml(str) {
@@ -643,8 +718,9 @@
     const hasChores = Object.keys(chores).length > 0;
     actionCard.innerHTML = `
       <div class="form-title">Équipes de corvées</div>
-      <div class="form-sub">5 personnes tirées au sort pour les couverts, 5 pour la vaisselle, à chaque repas — en fonction de qui est présent (voir la feuille de présence). L'algorithme équilibre la charge entre tout le monde.</div>
+      <div class="form-sub">Des équipes fixes de 5 personnes tournent sur les couverts et la vaisselle à chaque repas — toujours les mêmes coéquipiers. Pour ajuster : glissez un prénom vers une autre case (souris), ou touchez un prénom puis touchez la case de destination (mobile).</div>
       <button class="submit-btn pine" id="generate-chores-btn">🎲 ${hasChores ? 'Régénérer' : 'Générer'} les équipes</button>
+      ${selectedChoreChip ? `<div class="chore-hint">👉 Déplacer <strong>${escapeHtml(selectedChoreChip.name)}</strong> : touchez la case de destination (ou touchez-le à nouveau pour annuler).</div>` : ''}
     `;
     actionCard.querySelector('#generate-chores-btn').onclick = generateChores;
     contentEl.appendChild(actionCard);
@@ -657,11 +733,20 @@
       return;
     }
 
+    let lastDay = null;
     MEALS.forEach(meal => {
+      if (meal.day !== lastDay) {
+        const dayHead = document.createElement('div');
+        dayHead.className = 'day-divider';
+        dayHead.textContent = meal.dayLabel;
+        contentEl.appendChild(dayHead);
+        lastDay = meal.day;
+      }
+
       const mealChores = chores[meal.id] || { couverts: [], vaisselle: [] };
       const card = document.createElement('div');
       card.className = 'card meal-card';
-      card.innerHTML = `<div class="meal-head"><div class="meal-title">${meal.mealLabel}</div><div class="meal-badges"><div class="meal-badge heads">${meal.dayLabel}</div></div></div>`;
+      card.innerHTML = `<div class="meal-head"><div class="meal-title">${meal.mealLabel}</div></div>`;
 
       const grid = document.createElement('div');
       grid.className = 'cat-grid';
@@ -669,23 +754,56 @@
       TASKS.forEach(task => {
         const team = mealChores[task.id] || [];
         const block = document.createElement('div');
-        block.className = 'cat-block';
+        block.className = 'cat-block chore-drop';
         block.style.setProperty('--cat-color', task.color);
         block.innerHTML = `<div class="cat-label">${task.emoji} ${task.label} <span class="cat-count">${team.length}</span></div>`;
 
+        const list = document.createElement('div');
         if (team.length === 0) {
-          const empty = document.createElement('div');
-          empty.className = 'empty-cat';
-          empty.textContent = 'Personne assigné';
-          block.appendChild(empty);
+          list.innerHTML = '<div class="empty-cat">Personne assigné</div>';
         } else {
           team.forEach(name => {
+            const isSelected = !!(selectedChoreChip && selectedChoreChip.mealId === meal.id &&
+              selectedChoreChip.taskId === task.id && selectedChoreChip.name === name);
             const chip = document.createElement('div');
-            chip.className = 'chip';
-            chip.innerHTML = `<div><span class="who">${escapeHtml(name)}</span></div>`;
-            block.appendChild(chip);
+            chip.className = 'chip chore-chip' + (isSelected ? ' selected' : '');
+            chip.draggable = true;
+            chip.innerHTML = `
+              <div><span class="who">${escapeHtml(name)}</span></div>
+              <div class="chip-actions"><button class="del" title="Retirer">✕</button></div>
+            `;
+            chip.addEventListener('dragstart', () => {
+              dragPayload = { mealId: meal.id, taskId: task.id, name };
+            });
+            chip.addEventListener('click', (ev) => {
+              if (ev.target.closest('.del')) return;
+              selectedChoreChip = isSelected ? null : { mealId: meal.id, taskId: task.id, name };
+              render();
+            });
+            chip.querySelector('.del').onclick = () => removeChoreChip(meal.id, task.id, name);
+            list.appendChild(chip);
           });
         }
+        block.appendChild(list);
+
+        block.addEventListener('dragover', (ev) => { ev.preventDefault(); block.classList.add('drop-hover'); });
+        block.addEventListener('dragleave', () => block.classList.remove('drop-hover'));
+        block.addEventListener('drop', (ev) => {
+          ev.preventDefault();
+          block.classList.remove('drop-hover');
+          if (dragPayload) {
+            moveChoreChip(dragPayload.mealId, dragPayload.taskId, dragPayload.name, meal.id, task.id);
+            dragPayload = null;
+          }
+        });
+        block.addEventListener('click', (ev) => {
+          if (ev.target.closest('.chore-chip')) return;
+          if (selectedChoreChip) {
+            moveChoreChip(selectedChoreChip.mealId, selectedChoreChip.taskId, selectedChoreChip.name, meal.id, task.id);
+            selectedChoreChip = null;
+          }
+        });
+
         grid.appendChild(block);
       });
 
@@ -754,7 +872,6 @@
     e.preventDefault();
     const person = document.getElementById('noel-person').value.trim();
     const item = document.getElementById('noel-item').value.trim();
-    const mealId = document.getElementById('noel-meal').value;
     const categoryId = document.getElementById('noel-category').value;
     const note = document.getElementById('noel-note').value.trim();
     if (!person || !item) return;
@@ -762,13 +879,24 @@
 
     if (!itemsRef) { msgEl.textContent = "Firebase n'est pas configuré."; return; }
 
-    itemsRef.push({ person, item, note, mealId: mealId || null, categoryId, createdAt: Date.now() })
-      .then(() => { msgEl.textContent = `Merci ${person}, c'est noté !`; })
+    const mealIds = selectedMeals.size > 0 ? Array.from(selectedMeals) : [null];
+    const writes = mealIds.map(mealId =>
+      itemsRef.push({ person, item, note, mealId: mealId || null, categoryId, createdAt: Date.now() })
+    );
+
+    Promise.all(writes)
+      .then(() => {
+        msgEl.textContent = mealIds.length > 1
+          ? `Merci ${person}, ajouté à ${mealIds.length} repas !`
+          : `Merci ${person}, c'est noté !`;
+      })
       .catch(() => { msgEl.textContent = "L'enregistrement a échoué, réessayez."; });
 
     document.getElementById('noel-item').value = '';
     document.getElementById('noel-note').value = '';
-    activeTab = mealId ? mealById(mealId).day : TAB_UNASSIGNED;
+    activeTab = mealIds[0] ? mealById(mealIds[0]).day : TAB_UNASSIGNED;
+    selectedMeals.clear();
+    mealToggleGroup.querySelectorAll('.meal-toggle.active').forEach(b => b.classList.remove('active'));
     setTimeout(() => { msgEl.textContent = ''; }, 3500);
   });
 
