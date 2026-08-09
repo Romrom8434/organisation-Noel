@@ -314,6 +314,28 @@
     </div>
 
     <!-- Expense form (visible only on the Économie tab) -->
+    <!-- Groups / foyers form (visible only on the Économie tab) -->
+    <div class="card" id="group-form-card" style="display:none;">
+      <div class="form-title">Regrouper par foyer</div>
+      <div class="form-sub">Les personnes d'un même foyer (ex. une famille) sont comptées comme une seule entité pour les comptes — pas de dette à suivre entre elles.</div>
+      <form id="group-form">
+        <div class="field-row">
+          <div class="field full">
+            <label for="group-name">Nom du foyer</label>
+            <input type="text" id="group-name" placeholder="ex. Famille Cécile">
+          </div>
+        </div>
+        <div class="field-row">
+          <div class="field full">
+            <label>Membres du foyer</label>
+            <div class="meal-toggle-group" id="group-members"></div>
+          </div>
+        </div>
+        <button type="submit" class="submit-btn">Enregistrer le foyer</button>
+        <div class="form-msg" id="group-form-msg"></div>
+      </form>
+    </div>
+
     <div class="card" id="expense-form-card" style="display:none;">
       <div class="form-title">Ajouter une dépense</div>
       <div class="form-sub">Pour suivre qui doit quoi à qui (courses, essence, gîte...).</div>
@@ -416,11 +438,13 @@
   let presence = [];
   let chores = {}; // { [mealId]: { [taskId]: [names] } } — taskId dépend du type de repas
   let expenses = []; // { id, payer, amount, description, participants: [names], createdAt }
+  let groups = {};   // { [slug]: { name, members: [names] } }
   let activeTab = '24';
   let dragPayload = null;       // {mealId, taskId, name} pendant un glisser-déposer souris
   let selectedChoreChip = null; // {mealId, taskId, name} pendant une sélection tactile (mobile)
   let expenseParticipants = new Set();      // sélection courante du formulaire de dépense
   let expenseParticipantsKnown = new Set(); // noms déjà vus, pour ne pas réinitialiser un décochage manuel
+  let groupMembers = new Set();             // sélection courante du formulaire de foyer
 
   // ---- Config check ----
   const configOk = Object.values(firebaseConfig).every(v => typeof v === 'string' && !v.includes('REMPLACE_MOI'));
@@ -438,6 +462,7 @@
   let presenceRef = null;
   let choresRef = null;
   let expensesRef = null;
+  let groupsRef = null;
 
   function slugify(name) {
     return (name || '').trim().toLowerCase()
@@ -503,6 +528,24 @@
     });
   }
   syncExpenseParticipantToggles();
+
+  const groupMembersContainer = document.getElementById('group-members');
+  function syncGroupMemberToggles() {
+    const currentNames = Array.from(new Set(presence.map(p => p.person)));
+    groupMembersContainer.innerHTML = '';
+    currentNames.forEach(n => {
+      const btn = document.createElement('button');
+      btn.type = 'button';
+      btn.className = 'meal-toggle' + (groupMembers.has(n) ? ' active' : '');
+      btn.textContent = n;
+      btn.onclick = () => {
+        if (groupMembers.has(n)) { groupMembers.delete(n); btn.classList.remove('active'); }
+        else { groupMembers.add(n); btn.classList.add('active'); }
+      };
+      groupMembersContainer.appendChild(btn);
+    });
+  }
+  syncGroupMemberToggles();
 
   const catSel = document.getElementById('noel-category');
   CATEGORIES.forEach(c => {
@@ -600,6 +643,27 @@
   }
 
   function removeExpense(id) { if (expensesRef) expensesRef.child(id).remove(); }
+  function removeGroup(id) { if (groupsRef) groupsRef.child(id).remove(); }
+
+  // Retrouve le nom d'affichage du foyer d'une personne (ou son propre nom si elle n'est dans aucun foyer).
+  function groupLabelForPerson(name) {
+    for (const g of Object.values(groups)) {
+      if (g.members && g.members.includes(name)) return g.name;
+    }
+    return name;
+  }
+
+  // Regroupe un solde par personne en un solde par foyer (les dettes internes à un
+  // même foyer s'annulent automatiquement puisqu'elles sont sommées ensemble).
+  function computeGroupBalances(balance) {
+    const grouped = {};
+    Object.entries(balance).forEach(([person, v]) => {
+      const label = groupLabelForPerson(person);
+      grouped[label] = (grouped[label] || 0) + v;
+    });
+    Object.keys(grouped).forEach(k => { grouped[k] = Math.round(grouped[k] * 100) / 100; });
+    return grouped;
+  }
 
   function computeBalances() {
     const balance = {};
@@ -976,6 +1040,27 @@
     const contentEl = document.getElementById('noel-content');
     contentEl.innerHTML = '';
 
+    const groupList = Object.entries(groups);
+    if (groupList.length > 0) {
+      const groupsCard = document.createElement('div');
+      groupsCard.className = 'card';
+      groupsCard.innerHTML = '<div class="form-title">Foyers</div>';
+      groupList.forEach(([id, g]) => {
+        const row = document.createElement('div');
+        row.className = 'presence-row';
+        row.innerHTML = `
+          <div class="presence-info">
+            <div class="who">${escapeHtml(g.name)}</div>
+            <div class="range">${(g.members || []).map(escapeHtml).join(', ') || 'Aucun membre'}</div>
+          </div>
+          <button class="del" title="Supprimer">✕</button>
+        `;
+        row.querySelector('.del').onclick = () => removeGroup(id);
+        groupsCard.appendChild(row);
+      });
+      contentEl.appendChild(groupsCard);
+    }
+
     if (expenses.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'card empty-state';
@@ -985,21 +1070,22 @@
     }
 
     const balance = computeBalances();
-    const names = Object.keys(balance).sort((a, b) => a.localeCompare(b));
+    const groupBalance = computeGroupBalances(balance);
+    const labels = Object.keys(groupBalance).sort((a, b) => a.localeCompare(b));
 
     const balCard = document.createElement('div');
     balCard.className = 'card';
-    balCard.innerHTML = '<div class="form-title">Qui doit quoi</div>';
-    names.forEach(n => {
-      const v = balance[n];
-      const label = v > 0.005 ? `doit recevoir ${v.toFixed(2)} €`
+    balCard.innerHTML = `<div class="form-title">Qui doit quoi</div><div class="form-sub">${groupList.length > 0 ? 'Les personnes d\'un même foyer sont regroupées.' : ''}</div>`;
+    labels.forEach(label => {
+      const v = groupBalance[label];
+      const balLabel = v > 0.005 ? `doit recevoir ${v.toFixed(2)} €`
         : (v < -0.005 ? `doit payer ${Math.abs(v).toFixed(2)} €` : 'à jour');
       const cls = v > 0.005 ? 'ov-ok' : (v < -0.005 ? 'ov-zero' : '');
       const row = document.createElement('div');
       row.className = 'presence-row';
       row.innerHTML = `
-        <div class="presence-info"><div class="who">${escapeHtml(n)}</div></div>
-        <div class="${cls}" style="font-weight:700; font-size:13.5px;">${label}</div>
+        <div class="presence-info"><div class="who">${escapeHtml(label)}</div></div>
+        <div class="${cls}" style="font-weight:700; font-size:13.5px;">${balLabel}</div>
       `;
       balCard.appendChild(row);
     });
@@ -1007,8 +1093,8 @@
 
     const settleCard = document.createElement('div');
     settleCard.className = 'card';
-    settleCard.innerHTML = '<div class="form-title">Pour équilibrer les comptes</div><div class="form-sub">Le minimum de virements pour que tout le monde soit quitte.</div>';
-    const transactions = computeSettlement(balance);
+    settleCard.innerHTML = '<div class="form-title">Pour équilibrer les comptes</div><div class="form-sub">Le minimum de virements pour que tout le monde (ou chaque foyer) soit quitte.</div>';
+    const transactions = computeSettlement(groupBalance);
     if (transactions.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
@@ -1091,6 +1177,7 @@
 
   function render() {
     document.getElementById('expense-form-card').style.display = (activeTab === TAB_ECONOMY) ? '' : 'none';
+    document.getElementById('group-form-card').style.display = (activeTab === TAB_ECONOMY) ? '' : 'none';
     renderStats();
     renderTabs();
     if (activeTab === TAB_UNASSIGNED) renderUnassigned();
@@ -1194,6 +1281,26 @@
     setTimeout(() => { msgEl.textContent = ''; }, 3500);
   });
 
+  document.getElementById('group-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const name = document.getElementById('group-name').value.trim();
+    const members = Array.from(groupMembers);
+    const msgEl = document.getElementById('group-form-msg');
+
+    if (!name) { msgEl.textContent = 'Merci de donner un nom au foyer.'; return; }
+    if (members.length === 0) { msgEl.textContent = 'Sélectionnez au moins un membre.'; return; }
+    if (!groupsRef) { msgEl.textContent = "Firebase n'est pas configuré."; return; }
+
+    groupsRef.child(slugify(name)).set({ name, members })
+      .then(() => { msgEl.textContent = `Foyer "${name}" enregistré !`; })
+      .catch(() => { msgEl.textContent = "L'enregistrement a échoué, réessayez."; });
+
+    document.getElementById('group-name').value = '';
+    groupMembers.clear();
+    syncGroupMemberToggles();
+    setTimeout(() => { msgEl.textContent = ''; }, 3500);
+  });
+
   // ---- Boot ----
   render();
 
@@ -1205,6 +1312,7 @@
       presenceRef = db.ref('presence');
       choresRef = db.ref('chores');
       expensesRef = db.ref('expenses');
+      groupsRef = db.ref('groups');
 
       const connDot = document.getElementById('conn-dot');
       const connLabel = document.getElementById('conn-label');
@@ -1224,6 +1332,7 @@
         const val = snapshot.val() || {};
         presence = Object.keys(val).map(key => ({ id: key, ...val[key] }));
         syncExpenseParticipantToggles();
+        syncGroupMemberToggles();
         render();
       });
 
@@ -1235,6 +1344,11 @@
       expensesRef.on('value', snapshot => {
         const val = snapshot.val() || {};
         expenses = Object.keys(val).map(key => ({ id: key, ...val[key] }));
+        render();
+      });
+
+      groupsRef.on('value', snapshot => {
+        groups = snapshot.val() || {};
         render();
       });
     } catch (err) {
