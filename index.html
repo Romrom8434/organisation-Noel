@@ -241,8 +241,8 @@
 
     <div class="header">
       <div class="kicker">Gîte en famille</div>
-      <h1>Qui apporte quoi ?</h1>
-      <div class="subtitle">Du 24 décembre au soir au 27 décembre 2026, 11h — env. 20 personnes</div>
+      <h1 id="page-title">Qui apporte quoi ?</h1>
+      <div class="subtitle">Du jeudi 24 décembre au soir au dimanche 27 décembre 2026, 11h — env. 20 personnes</div>
     </div>
 
     <svg class="sprig" viewBox="0 0 220 26" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -260,7 +260,7 @@
     <div class="stats" id="noel-stats"></div>
 
     <!-- Item form -->
-    <div class="card">
+    <div class="card" id="item-form-card">
       <div class="form-title">Ajouter ce que vous apportez</div>
       <div class="form-sub">Vous choisirez ensuite le ou les repas depuis l'onglet "À répartir".</div>
       <form id="noel-form">
@@ -394,15 +394,26 @@
   };
   /* ============================================================ */
 
+  /* ============================================================
+     ÉTAPES DE MISE EN PLACE — passe une section à true pour l'activer
+     (le code de chaque section reste en place, rien n'est supprimé)
+       repas    : plats apportés + onglets par jour + "À répartir"
+       taches   : équipes de corvées
+       economie : dépenses, foyers, qui doit quoi
+       apercu   : vue d'ensemble par repas
+     La feuille de présence est toujours active.
+     ============================================================ */
+  const FEATURES = { repas: false, taches: false, economie: false, apercu: false };
+
   const MEALS = [
-    { id: '24-soir',  day: '24', dayLabel: 'Mer. 24', mealLabel: 'Réveillon', order: 0 },
-    { id: '25-matin', day: '25', dayLabel: 'Jeu. 25', mealLabel: 'Petit-déj', order: 1 },
-    { id: '25-midi',  day: '25', dayLabel: 'Jeu. 25', mealLabel: 'Déjeuner de Noël', order: 2 },
-    { id: '25-soir',  day: '25', dayLabel: 'Jeu. 25', mealLabel: 'Dîner', order: 3 },
-    { id: '26-matin', day: '26', dayLabel: 'Ven. 26', mealLabel: 'Petit-déj', order: 4 },
-    { id: '26-midi',  day: '26', dayLabel: 'Ven. 26', mealLabel: 'Déjeuner', order: 5 },
-    { id: '26-soir',  day: '26', dayLabel: 'Ven. 26', mealLabel: 'Dîner', order: 6 },
-    { id: '27-matin', day: '27', dayLabel: 'Sam. 27', mealLabel: 'Petit-déj (départ 11h)', order: 7 },
+    { id: '24-soir',  day: '24', dayLabel: 'Jeu. 24', mealLabel: 'Réveillon', order: 0 },
+    { id: '25-matin', day: '25', dayLabel: 'Ven. 25', mealLabel: 'Petit-déj', order: 1 },
+    { id: '25-midi',  day: '25', dayLabel: 'Ven. 25', mealLabel: 'Déjeuner de Noël', order: 2 },
+    { id: '25-soir',  day: '25', dayLabel: 'Ven. 25', mealLabel: 'Dîner', order: 3 },
+    { id: '26-matin', day: '26', dayLabel: 'Sam. 26', mealLabel: 'Petit-déj', order: 4 },
+    { id: '26-midi',  day: '26', dayLabel: 'Sam. 26', mealLabel: 'Déjeuner', order: 5 },
+    { id: '26-soir',  day: '26', dayLabel: 'Sam. 26', mealLabel: 'Dîner', order: 6 },
+    { id: '27-matin', day: '27', dayLabel: 'Dim. 27', mealLabel: 'Petit-déj (départ 11h)', order: 7 },
   ];
   const DAYS = ['24','25','26','27'];
   const CATEGORIES = [
@@ -710,6 +721,12 @@
 
   function renderStats() {
     const statsEl = document.getElementById('noel-stats');
+    if (!FEATURES.repas) {
+      statsEl.innerHTML = `
+        <div class="stat"><div class="n">${presence.length}</div><div class="l">Présences notées</div></div>
+      `;
+      return;
+    }
     const unassignedCount = items.filter(i => !i.mealId).length;
     statsEl.innerHTML = `
       <div class="stat"><div class="n">${items.length}</div><div class="l">Apports</div></div>
@@ -721,21 +738,29 @@
   function renderTabs() {
     const tabsEl = document.getElementById('noel-tabs');
     tabsEl.innerHTML = '';
-    DAYS.forEach(d => {
-      const label = MEALS.find(m => m.day === d).dayLabel;
-      const btn = document.createElement('button');
-      btn.className = 'tab' + (activeTab === d ? ' active' : '');
-      btn.textContent = label;
-      btn.onclick = () => { activeTab = d; render(); };
-      tabsEl.appendChild(btn);
-    });
 
-    const unassignedCount = items.filter(i => !i.mealId).length;
-    const unBtn = document.createElement('button');
-    unBtn.className = 'tab tab-special' + (activeTab === TAB_UNASSIGNED ? ' active' : '');
-    unBtn.innerHTML = 'À répartir' + (unassignedCount ? `<span class="tab-badge">${unassignedCount}</span>` : '');
-    unBtn.onclick = () => { activeTab = TAB_UNASSIGNED; render(); };
-    tabsEl.appendChild(unBtn);
+    // Une seule section active (la présence) : pas besoin de barre d'onglets.
+    const onlyPresence = !FEATURES.repas && !FEATURES.taches && !FEATURES.economie && !FEATURES.apercu;
+    tabsEl.style.display = onlyPresence ? 'none' : '';
+    if (onlyPresence) return;
+
+    if (FEATURES.repas) {
+      DAYS.forEach(d => {
+        const label = MEALS.find(m => m.day === d).dayLabel;
+        const btn = document.createElement('button');
+        btn.className = 'tab' + (activeTab === d ? ' active' : '');
+        btn.textContent = label;
+        btn.onclick = () => { activeTab = d; render(); };
+        tabsEl.appendChild(btn);
+      });
+
+      const unassignedCount = items.filter(i => !i.mealId).length;
+      const unBtn = document.createElement('button');
+      unBtn.className = 'tab tab-special' + (activeTab === TAB_UNASSIGNED ? ' active' : '');
+      unBtn.innerHTML = 'À répartir' + (unassignedCount ? `<span class="tab-badge">${unassignedCount}</span>` : '');
+      unBtn.onclick = () => { activeTab = TAB_UNASSIGNED; render(); };
+      tabsEl.appendChild(unBtn);
+    }
 
     const presBtn = document.createElement('button');
     presBtn.className = 'tab tab-special' + (activeTab === TAB_PRESENCE ? ' active' : '');
@@ -743,23 +768,29 @@
     presBtn.onclick = () => { activeTab = TAB_PRESENCE; render(); };
     tabsEl.appendChild(presBtn);
 
-    const choresBtn = document.createElement('button');
-    choresBtn.className = 'tab tab-special' + (activeTab === TAB_CHORES ? ' active' : '');
-    choresBtn.textContent = '🧹 Tâches';
-    choresBtn.onclick = () => { activeTab = TAB_CHORES; render(); };
-    tabsEl.appendChild(choresBtn);
+    if (FEATURES.taches) {
+      const choresBtn = document.createElement('button');
+      choresBtn.className = 'tab tab-special' + (activeTab === TAB_CHORES ? ' active' : '');
+      choresBtn.textContent = '🧹 Tâches';
+      choresBtn.onclick = () => { activeTab = TAB_CHORES; render(); };
+      tabsEl.appendChild(choresBtn);
+    }
 
-    const econBtn = document.createElement('button');
-    econBtn.className = 'tab tab-special' + (activeTab === TAB_ECONOMY ? ' active' : '');
-    econBtn.textContent = '💶 Économie';
-    econBtn.onclick = () => { activeTab = TAB_ECONOMY; render(); };
-    tabsEl.appendChild(econBtn);
+    if (FEATURES.economie) {
+      const econBtn = document.createElement('button');
+      econBtn.className = 'tab tab-special' + (activeTab === TAB_ECONOMY ? ' active' : '');
+      econBtn.textContent = '💶 Économie';
+      econBtn.onclick = () => { activeTab = TAB_ECONOMY; render(); };
+      tabsEl.appendChild(econBtn);
+    }
 
-    const ovBtn = document.createElement('button');
-    ovBtn.className = 'tab tab-special' + (activeTab === TAB_OVERVIEW ? ' active' : '');
-    ovBtn.textContent = "Vue d'ensemble";
-    ovBtn.onclick = () => { activeTab = TAB_OVERVIEW; render(); };
-    tabsEl.appendChild(ovBtn);
+    if (FEATURES.apercu) {
+      const ovBtn = document.createElement('button');
+      ovBtn.className = 'tab tab-special' + (activeTab === TAB_OVERVIEW ? ' active' : '');
+      ovBtn.textContent = "Vue d'ensemble";
+      ovBtn.onclick = () => { activeTab = TAB_OVERVIEW; render(); };
+      tabsEl.appendChild(ovBtn);
+    }
   }
 
   function renderDay(day) {
@@ -1176,6 +1207,17 @@
   }
 
   function render() {
+    // Si la section de l'onglet actif est désactivée, on retombe sur la présence.
+    const tabEnabled =
+      (activeTab === TAB_PRESENCE) ||
+      (activeTab === TAB_CHORES && FEATURES.taches) ||
+      (activeTab === TAB_ECONOMY && FEATURES.economie) ||
+      (activeTab === TAB_OVERVIEW && FEATURES.apercu) ||
+      ((activeTab === TAB_UNASSIGNED || DAYS.includes(activeTab)) && FEATURES.repas);
+    if (!tabEnabled) activeTab = TAB_PRESENCE;
+
+    document.getElementById('item-form-card').style.display = FEATURES.repas ? '' : 'none';
+    document.getElementById('page-title').textContent = FEATURES.repas ? 'Qui apporte quoi ?' : 'Qui est là, et quand ?';
     document.getElementById('expense-form-card').style.display = (activeTab === TAB_ECONOMY) ? '' : 'none';
     document.getElementById('group-form-card').style.display = (activeTab === TAB_ECONOMY) ? '' : 'none';
     renderStats();
