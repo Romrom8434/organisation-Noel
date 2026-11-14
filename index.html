@@ -945,6 +945,27 @@
       });
     }
     contentEl.appendChild(card);
+
+    // Récap par repas (remplacé par la "Vue d'ensemble" quand celle-ci est activée)
+    if (!FEATURES.apercu) {
+      const recap = document.createElement('div');
+      recap.className = 'card';
+      recap.innerHTML = `<div class="form-title">Récap par repas</div><div class="form-sub">Nombre de personnes présentes à chaque repas.</div>`;
+      MEALS.forEach(meal => {
+        const names = presentPeopleForMeal(meal.id).sort((a, b) => a.localeCompare(b));
+        const row = document.createElement('div');
+        row.className = 'presence-row';
+        row.innerHTML = `
+          <div class="presence-info">
+            <div class="who">${meal.dayLabel} · ${meal.mealLabel}</div>
+            <div class="range">${names.length ? names.map(escapeHtml).join(', ') : 'Personne pour l\'instant'}</div>
+          </div>
+          <div class="meal-badge heads">👤 ${names.length}</div>
+        `;
+        recap.appendChild(row);
+      });
+      contentEl.appendChild(recap);
+    }
   }
 
   function renderChores() {
