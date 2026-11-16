@@ -221,6 +221,24 @@
   .ov-table th, .ov-table td { padding: 9px 8px; text-align: center; border-bottom: 1px solid var(--line); }
   .ov-table th { font-weight: 600; color: var(--pine); font-family: 'Fraunces', serif; font-size: 13.5px; }
   .ov-table td:first-child, .ov-table th:first-child { text-align: left; font-weight: 600; color: var(--ink-soft); font-size: 12.5px; }
+
+  /* ---- Tableaux récap présence ---- */
+  .recap-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .recap-table th, .recap-table td { padding: 8px 6px; text-align: center; border-bottom: 1px solid var(--line); }
+  .recap-table thead th { font-family: 'Fraunces', serif; font-weight: 600; color: var(--pine); font-size: 13px; border-bottom: 1px solid var(--line); }
+  .recap-table thead tr.sub th { font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 600; color: var(--ink-soft); text-transform: uppercase; letter-spacing: 0.04em; }
+  .recap-table .group-start { border-left: 1px solid var(--line); }
+  .recap-table th.who-col, .recap-table td.who-col {
+    text-align: left; font-weight: 600; color: var(--pine); font-size: 13px;
+    position: sticky; left: 0; background: var(--card); z-index: 1; min-width: 110px;
+  }
+  .recap-table .yes { color: var(--sage); font-weight: 700; }
+  .recap-table .part { color: var(--amber-dark); font-size: 11px; font-weight: 600; line-height: 1.2; }
+  .recap-table .no { color: #D9CFB7; }
+  .recap-table tfoot td { font-weight: 700; color: var(--slate); border-top: 2px solid var(--line); border-bottom: none; }
+  .recap-table tfoot td.who-col { color: var(--ink-soft); }
+  .recap-table .total-col { font-weight: 700; color: var(--slate); border-left: 1px solid var(--line); }
+  .recap-legend { font-size: 11.5px; color: var(--ink-soft); margin-top: 8px; }
   .ov-heads { font-weight: 700; color: var(--slate); }
   .ov-zero { color: #C7A2A2; font-weight: 700; }
   .ov-ok { color: var(--sage); font-weight: 700; }
@@ -310,6 +328,26 @@
         </div>
         <button type="submit" class="submit-btn pine">Enregistrer ma présence</button>
         <div class="form-msg" id="pres-form-msg"></div>
+      </form>
+    </div>
+
+    <!-- Couples form (visible only on the Présence tab) -->
+    <div class="card" id="couple-form-card">
+      <div class="form-title">Associer deux personnes</div>
+      <div class="form-sub">Les deux personnes choisies apparaîtront sur une même ligne dans les tableaux récap (couple, parent + enfant, etc.). Une personne ne peut être associée qu'à une seule autre.</div>
+      <form id="couple-form">
+        <div class="field-row">
+          <div class="field">
+            <label for="couple-a">Première personne</label>
+            <select id="couple-a"></select>
+          </div>
+          <div class="field">
+            <label for="couple-b">Deuxième personne</label>
+            <select id="couple-b"></select>
+          </div>
+        </div>
+        <button type="submit" class="submit-btn">Associer</button>
+        <div class="form-msg" id="couple-form-msg"></div>
       </form>
     </div>
 
@@ -450,6 +488,7 @@
   let chores = {}; // { [mealId]: { [taskId]: [names] } } — taskId dépend du type de repas
   let expenses = []; // { id, payer, amount, description, participants: [names], createdAt }
   let groups = {};   // { [slug]: { name, members: [names] } }
+  let couples = [];  // { id, a, b } — deux personnes affichées sur une même ligne des récaps
   let activeTab = '24';
   let dragPayload = null;       // {mealId, taskId, name} pendant un glisser-déposer souris
   let selectedChoreChip = null; // {mealId, taskId, name} pendant une sélection tactile (mobile)
@@ -474,6 +513,7 @@
   let choresRef = null;
   let expensesRef = null;
   let groupsRef = null;
+  let couplesRef = null;
 
   function slugify(name) {
     return (name || '').trim().toLowerCase()
@@ -557,6 +597,19 @@
     });
   }
   syncGroupMemberToggles();
+
+  // Listes déroulantes du formulaire "Associer deux personnes" (conserve la sélection en cours).
+  function syncCoupleSelects() {
+    const names = Array.from(new Set(presence.map(p => p.person))).sort((a, b) => a.localeCompare(b));
+    ['couple-a', 'couple-b'].forEach(id => {
+      const sel = document.getElementById(id);
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">Choisir…</option>' +
+        names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
+      if (names.includes(prev)) sel.value = prev;
+    });
+  }
+  syncCoupleSelects();
 
   const catSel = document.getElementById('noel-category');
   CATEGORIES.forEach(c => {
@@ -946,27 +999,154 @@
     }
     contentEl.appendChild(card);
 
-    // Récap par repas (remplacé par la "Vue d'ensemble" quand celle-ci est activée)
+    // Tableaux récap (remplacés par la "Vue d'ensemble" quand celle-ci est activée)
     if (!FEATURES.apercu) {
-      const recap = document.createElement('div');
-      recap.className = 'card';
-      recap.innerHTML = `<div class="form-title">Récap par repas</div><div class="form-sub">Nombre de personnes présentes à chaque repas.</div>`;
-      MEALS.forEach(meal => {
-        const names = presentPeopleForMeal(meal.id).sort((a, b) => a.localeCompare(b));
+      const rows = recapRows();
+
+      // 1) Nuits sur place : présent au petit-déj du lendemain = a dormi sur place.
+      const nightGroups = [];
+      for (let i = 0; i < DAYS.length - 1; i++) {
+        const mealId = DAYS[i + 1] + '-matin';
+        const from = MEALS.find(m => m.day === DAYS[i]).dayLabel;
+        const to = MEALS.find(m => m.day === DAYS[i + 1]).dayLabel;
+        nightGroups.push({ label: from + ' → ' + to, cols: [{ sub: '', test: person => isPresentAt(person, mealId) }] });
+      }
+      const nightsCard = document.createElement('div');
+      nightsCard.className = 'card';
+      nightsCard.innerHTML = `<div class="form-title">Nuits sur place</div><div class="form-sub">Une personne est comptée pour la nuit si elle est présente au petit-déj du lendemain.</div>`;
+      nightsCard.appendChild(wrapScroll(buildRecapTable(rows, nightGroups, 'Nuitées', false)));
+      nightsCard.insertAdjacentHTML('beforeend', '<div class="recap-legend">✓ = tous présents · un prénom = seule cette personne est là · · = absent</div>');
+      contentEl.appendChild(nightsCard);
+
+      // 2) Repas, regroupés par jour.
+      const momentLabel = { matin: 'Matin', midi: 'Midi', soir: 'Soir' };
+      const mealGroups = DAYS.map(d => ({
+        label: MEALS.find(m => m.day === d).dayLabel,
+        cols: MEALS.filter(m => m.day === d).map(m => ({
+          sub: momentLabel[m.id.split('-')[1]] || m.mealLabel,
+          test: person => isPresentAt(person, m.id)
+        }))
+      }));
+      const mealsCard = document.createElement('div');
+      mealsCard.className = 'card';
+      mealsCard.innerHTML = `<div class="form-title">Présence aux repas</div><div class="form-sub">Le total en bas donne le nombre de convives à chaque repas.</div>`;
+      mealsCard.appendChild(wrapScroll(buildRecapTable(rows, mealGroups, 'Repas', true)));
+      mealsCard.insertAdjacentHTML('beforeend', '<div class="recap-legend">✓ = tous présents · un prénom = seule cette personne est là · · = absent</div>');
+      contentEl.appendChild(mealsCard);
+    }
+
+    // Associations (couples)
+    if (couples.length > 0) {
+      const cCard = document.createElement('div');
+      cCard.className = 'card';
+      cCard.innerHTML = `<div class="form-title">Personnes associées</div>`;
+      couples.forEach(c => {
         const row = document.createElement('div');
         row.className = 'presence-row';
         row.innerHTML = `
-          <div class="presence-info">
-            <div class="who">${meal.dayLabel} · ${meal.mealLabel}</div>
-            <div class="range">${names.length ? names.map(escapeHtml).join(', ') : 'Personne pour l\'instant'}</div>
-          </div>
-          <div class="meal-badge heads">👤 ${names.length}</div>
+          <div class="presence-info"><div class="who">${escapeHtml(c.a)} &amp; ${escapeHtml(c.b)}</div></div>
+          <button class="del" title="Dissocier">✕</button>
         `;
-        recap.appendChild(row);
+        row.querySelector('.del').onclick = () => removeCouple(c.id);
+        cCard.appendChild(row);
       });
-      contentEl.appendChild(recap);
+      contentEl.appendChild(cCard);
     }
   }
+
+  // ---- Récap présence : helpers ----
+  function isPresentAt(person, mealId) {
+    const meal = mealById(mealId);
+    const key = slugify(person);
+    return presence.some(p => {
+      if (slugify(p.person) !== key) return false;
+      const a = mealById(p.arrivalMealId);
+      const d = mealById(p.departureMealId);
+      return !!(a && d && a.order <= meal.order && meal.order <= d.order);
+    });
+  }
+
+  // Une ligne par personne, ou par couple quand deux personnes sont associées.
+  function recapRows() {
+    const bySlug = new Map();
+    presence.forEach(p => bySlug.set(slugify(p.person), p.person));
+    const used = new Set();
+    const rows = [];
+    couples.forEach(c => {
+      const members = [bySlug.get(slugify(c.a)), bySlug.get(slugify(c.b))].filter(Boolean);
+      if (members.length === 0) return;
+      members.forEach(m => used.add(slugify(m)));
+      rows.push({ label: members.join(' & '), members });
+    });
+    bySlug.forEach((name, slug) => { if (!used.has(slug)) rows.push({ label: name, members: [name] }); });
+    rows.sort((a, b) => a.label.localeCompare(b.label));
+    return rows;
+  }
+
+  function recapCell(row, test) {
+    const here = row.members.filter(test);
+    if (here.length === 0) return { html: '<span class="no">·</span>', n: 0 };
+    if (here.length === row.members.length) return { html: '<span class="yes">✓</span>', n: here.length };
+    return { html: `<span class="part">${escapeHtml(here[0])}</span>`, n: here.length };
+  }
+
+  function wrapScroll(el) {
+    const w = document.createElement('div');
+    w.className = 'ov-table-wrap';
+    w.appendChild(el);
+    return w;
+  }
+
+  function buildRecapTable(rows, groupsDef, totalLabel, twoRows) {
+    const table = document.createElement('table');
+    table.className = 'recap-table';
+    const cols = [];
+    groupsDef.forEach(g => g.cols.forEach((c, i) => cols.push({ ...c, groupStart: i === 0 })));
+
+    let head = `<tr><th class="who-col"${twoRows ? ' rowspan="2"' : ''}>Personnes</th>`;
+    groupsDef.forEach(g => {
+      head += `<th class="group-start"${twoRows ? ` colspan="${g.cols.length}"` : ''}>${escapeHtml(g.label)}</th>`;
+    });
+    head += `<th class="total-col"${twoRows ? ' rowspan="2"' : ''}>${escapeHtml(totalLabel)}</th></tr>`;
+    if (twoRows) {
+      head += '<tr class="sub">' + cols.map(c => `<th class="${c.groupStart ? 'group-start' : ''}">${escapeHtml(c.sub)}</th>`).join('') + '</tr>';
+    }
+    table.innerHTML = `<thead>${head}</thead>`;
+
+    const tbody = document.createElement('tbody');
+    const colTotals = cols.map(() => 0);
+    let grand = 0;
+    if (rows.length === 0) {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `<td class="who-col" colspan="${cols.length + 2}" style="font-weight:400;color:var(--ink-soft);">Personne n'a encore renseigné sa présence.</td>`;
+      tbody.appendChild(tr);
+    }
+    rows.forEach(row => {
+      const tr = document.createElement('tr');
+      let rowTotal = 0;
+      let html = `<td class="who-col">${escapeHtml(row.label)}</td>`;
+      cols.forEach((c, i) => {
+        const cell = recapCell(row, c.test);
+        colTotals[i] += cell.n;
+        rowTotal += cell.n;
+        html += `<td class="${c.groupStart ? 'group-start' : ''}">${cell.html}</td>`;
+      });
+      grand += rowTotal;
+      html += `<td class="total-col">${rowTotal}</td>`;
+      tr.innerHTML = html;
+      tbody.appendChild(tr);
+    });
+    table.appendChild(tbody);
+
+    const tfoot = document.createElement('tfoot');
+    tfoot.innerHTML = '<tr><td class="who-col">Total personnes</td>' +
+      cols.map((c, i) => `<td class="${c.groupStart ? 'group-start' : ''}">${colTotals[i]}</td>`).join('') +
+      `<td class="total-col">${grand}</td></tr>`;
+    table.appendChild(tfoot);
+    return table;
+  }
+
+  function removeCouple(id) { if (couplesRef) couplesRef.child(id).remove(); }
 
   function renderChores() {
     const contentEl = document.getElementById('noel-content');
@@ -1238,6 +1418,7 @@
     if (!tabEnabled) activeTab = TAB_PRESENCE;
 
     document.getElementById('item-form-card').style.display = FEATURES.repas ? '' : 'none';
+    document.getElementById('couple-form-card').style.display = (activeTab === TAB_PRESENCE) ? '' : 'none';
     document.getElementById('page-title').textContent = FEATURES.repas ? 'Qui apporte quoi ?' : 'Qui est là, et quand ?';
     document.getElementById('expense-form-card').style.display = (activeTab === TAB_ECONOMY) ? '' : 'none';
     document.getElementById('group-form-card').style.display = (activeTab === TAB_ECONOMY) ? '' : 'none';
@@ -1344,6 +1525,31 @@
     setTimeout(() => { msgEl.textContent = ''; }, 3500);
   });
 
+  document.getElementById('couple-form').addEventListener('submit', function(e) {
+    e.preventDefault();
+    const a = document.getElementById('couple-a').value;
+    const b = document.getElementById('couple-b').value;
+    const msgEl = document.getElementById('couple-form-msg');
+
+    if (!a || !b) { msgEl.textContent = 'Choisissez deux personnes.'; return; }
+    if (slugify(a) === slugify(b)) { msgEl.textContent = 'Choisissez deux personnes différentes.'; return; }
+    if (!couplesRef) { msgEl.textContent = "Firebase n'est pas configuré."; return; }
+
+    // Une personne n'est associée qu'à une seule autre : on retire les anciennes associations.
+    const keys = [slugify(a), slugify(b)];
+    couples
+      .filter(c => keys.includes(slugify(c.a)) || keys.includes(slugify(c.b)))
+      .forEach(c => couplesRef.child(c.id).remove());
+
+    couplesRef.child(slugify(a) + '__' + slugify(b)).set({ a, b })
+      .then(() => { msgEl.textContent = `${a} & ${b} associés !`; })
+      .catch(() => { msgEl.textContent = "L'enregistrement a échoué, réessayez."; });
+
+    document.getElementById('couple-a').value = '';
+    document.getElementById('couple-b').value = '';
+    setTimeout(() => { msgEl.textContent = ''; }, 3500);
+  });
+
   document.getElementById('group-form').addEventListener('submit', function(e) {
     e.preventDefault();
     const name = document.getElementById('group-name').value.trim();
@@ -1376,6 +1582,7 @@
       choresRef = db.ref('chores');
       expensesRef = db.ref('expenses');
       groupsRef = db.ref('groups');
+      couplesRef = db.ref('couples');
 
       const connDot = document.getElementById('conn-dot');
       const connLabel = document.getElementById('conn-label');
@@ -1396,6 +1603,13 @@
         presence = Object.keys(val).map(key => ({ id: key, ...val[key] }));
         syncExpenseParticipantToggles();
         syncGroupMemberToggles();
+        syncCoupleSelects();
+        render();
+      });
+
+      couplesRef.on('value', snapshot => {
+        const val = snapshot.val() || {};
+        couples = Object.keys(val).map(key => ({ id: key, ...val[key] }));
         render();
       });
 
