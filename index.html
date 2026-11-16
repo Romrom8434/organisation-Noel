@@ -239,6 +239,20 @@
   .recap-table tfoot td.who-col { color: var(--ink-soft); }
   .recap-table .total-col { font-weight: 700; color: var(--slate); border-left: 1px solid var(--line); }
   .recap-legend { font-size: 11.5px; color: var(--ink-soft); margin-top: 8px; }
+
+  /* ---- Carte repliable ---- */
+  .collapse-head {
+    display: flex; align-items: center; justify-content: space-between; width: 100%;
+    background: none; border: none; padding: 0; margin: 0 0 4px; cursor: pointer; text-align: left;
+    font-family: inherit; color: inherit;
+  }
+  .collapse-count {
+    display: inline-block; margin-left: 8px; font-family: 'Inter', sans-serif; font-size: 12px; font-weight: 700;
+    background: var(--line); color: var(--ink-soft); border-radius: 999px; padding: 1px 9px; vertical-align: middle;
+  }
+  .collapse-chevron { color: var(--ink-soft); font-size: 18px; transition: transform .15s; transform: rotate(-90deg); }
+  .collapse-chevron.open { transform: rotate(0deg); }
+  .collapse-head:focus-visible { outline: 2px solid var(--amber); outline-offset: 4px; border-radius: 6px; }
   .ov-heads { font-weight: 700; color: var(--slate); }
   .ov-zero { color: #C7A2A2; font-weight: 700; }
   .ov-ok { color: var(--sage); font-weight: 700; }
@@ -489,6 +503,7 @@
   let expenses = []; // { id, payer, amount, description, participants: [names], createdAt }
   let groups = {};   // { [slug]: { name, members: [names] } }
   let couples = [];  // { id, a, b } — deux personnes affichées sur une même ligne des récaps
+  let presenceListOpen = false; // la liste détaillée des présences est repliée par défaut
   let activeTab = '24';
   let dragPayload = null;       // {mealId, taskId, name} pendant un glisser-déposer souris
   let selectedChoreChip = null; // {mealId, taskId, name} pendant une sélection tactile (mobile)
@@ -972,9 +987,21 @@
     contentEl.innerHTML = '';
     const card = document.createElement('div');
     card.className = 'card';
-    card.innerHTML = `<div class="form-title">Qui est là, et quand</div>`;
 
-    if (presence.length === 0) {
+    const header = document.createElement('button');
+    header.type = 'button';
+    header.className = 'collapse-head';
+    header.setAttribute('aria-expanded', presenceListOpen ? 'true' : 'false');
+    header.innerHTML = `
+      <span class="form-title">Qui est là, et quand <span class="collapse-count">${presence.length}</span></span>
+      <span class="collapse-chevron${presenceListOpen ? ' open' : ''}">▾</span>
+    `;
+    header.onclick = () => { presenceListOpen = !presenceListOpen; render(); };
+    card.appendChild(header);
+
+    if (!presenceListOpen) {
+      // liste repliée : seul l'en-tête est affiché
+    } else if (presence.length === 0) {
       const empty = document.createElement('div');
       empty.className = 'empty-state';
       empty.textContent = "Personne n'a encore renseigné sa présence.";
@@ -1013,8 +1040,8 @@
       }
       const nightsCard = document.createElement('div');
       nightsCard.className = 'card';
-      nightsCard.innerHTML = `<div class="form-title">Nuits sur place</div><div class="form-sub">Une personne est comptée pour la nuit si elle est présente au petit-déj du lendemain.</div>`;
-      nightsCard.appendChild(wrapScroll(buildRecapTable(rows, nightGroups, 'Nuitées', false)));
+      nightsCard.innerHTML = `<div class="form-title">Nuits sur place</div><div class="form-sub">Une personne dort sur place si elle est présente au petit-déj du lendemain. Un binôme compte pour 1 nuit (dès qu'au moins l'un des deux est là), pas pour 2.</div>`;
+      nightsCard.appendChild(wrapScroll(buildRecapTable(rows, nightGroups, 'Nuitées', false, true)));
       nightsCard.insertAdjacentHTML('beforeend', '<div class="recap-legend">✓ = tous présents · un prénom = seule cette personne est là · · = absent</div>');
       contentEl.appendChild(nightsCard);
 
@@ -1097,7 +1124,8 @@
     return w;
   }
 
-  function buildRecapTable(rows, groupsDef, totalLabel, twoRows) {
+  // unitCount = true : une ligne compte pour 1 par colonne (binôme = 1), au lieu du nombre de personnes.
+  function buildRecapTable(rows, groupsDef, totalLabel, twoRows, unitCount) {
     const table = document.createElement('table');
     table.className = 'recap-table';
     const cols = [];
@@ -1127,8 +1155,9 @@
       let html = `<td class="who-col">${escapeHtml(row.label)}</td>`;
       cols.forEach((c, i) => {
         const cell = recapCell(row, c.test);
-        colTotals[i] += cell.n;
-        rowTotal += cell.n;
+        const counted = unitCount ? Math.min(1, cell.n) : cell.n;
+        colTotals[i] += counted;
+        rowTotal += counted;
         html += `<td class="${c.groupStart ? 'group-start' : ''}">${cell.html}</td>`;
       });
       grand += rowTotal;
@@ -1139,7 +1168,7 @@
     table.appendChild(tbody);
 
     const tfoot = document.createElement('tfoot');
-    tfoot.innerHTML = '<tr><td class="who-col">Total personnes</td>' +
+    tfoot.innerHTML = `<tr><td class="who-col">${unitCount ? 'Total (binôme = 1)' : 'Total personnes'}</td>` +
       cols.map((c, i) => `<td class="${c.groupStart ? 'group-start' : ''}">${colTotals[i]}</td>`).join('') +
       `<td class="total-col">${grand}</td></tr>`;
     table.appendChild(tfoot);
