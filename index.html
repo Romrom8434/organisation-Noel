@@ -294,16 +294,23 @@
     <!-- Item form -->
     <div class="card" id="item-form-card">
       <div class="form-title">Ajouter ce que vous apportez</div>
-      <div class="form-sub">Vous choisirez ensuite le ou les repas depuis l'onglet "À répartir".</div>
+      <div class="form-sub" id="item-form-sub">Vous choisirez ensuite le ou les repas depuis l'onglet "À répartir".</div>
       <form id="noel-form">
         <div class="field-row">
           <div class="field">
-            <label for="noel-person">Votre prénom</label>
-            <input type="text" id="noel-person" placeholder="ex. Camille" required>
+            <label for="noel-person">Prénom(s)</label>
+            <input type="text" id="noel-person" list="names-list" placeholder="ex. Cécile et Serge" autocomplete="off" required>
+            <datalist id="names-list"></datalist>
           </div>
           <div class="field">
-            <label for="noel-item">Ce que vous apportez</label>
-            <input type="text" id="noel-item" placeholder="ex. Bûche au chocolat" required>
+            <label for="noel-item">Menu envisagé</label>
+            <input type="text" id="noel-item" placeholder="ex. Des gratins" required>
+          </div>
+        </div>
+        <div class="field-row" id="noel-meals-field" style="display:none;">
+          <div class="field full">
+            <label>Pour quel(s) repas ?</label>
+            <div class="meal-toggle-group" id="noel-meal-toggles"></div>
           </div>
         </div>
         <div class="field-row">
@@ -312,8 +319,8 @@
             <select id="noel-category" required></select>
           </div>
           <div class="field">
-            <label for="noel-note">Précision (optionnel)</label>
-            <input type="text" id="noel-note" placeholder="ex. pour 8 personnes, sans gluten...">
+            <label for="noel-note">Description exacte (à compléter plus tard)</label>
+            <input type="text" id="noel-note" placeholder="ex. gratin dauphinois + gratin de courge">
           </div>
         </div>
         <button type="submit" class="submit-btn">Ajouter à la liste</button>
@@ -322,7 +329,7 @@
     </div>
 
     <!-- Presence form -->
-    <div class="card">
+    <div class="card" id="presence-form-card">
       <div class="form-title">Feuille de présence</div>
       <div class="form-sub">Indiquez à partir de quel repas vous êtes là, et jusqu'à quel repas.</div>
       <form id="presence-form">
@@ -449,13 +456,15 @@
   /* ============================================================
      ÉTAPES DE MISE EN PLACE — passe une section à true pour l'activer
      (le code de chaque section reste en place, rien n'est supprimé)
-       repas    : plats apportés + onglets par jour + "À répartir"
+       plats    : questionnaire "qui apporte quoi" — chacun choisit un ou plusieurs
+                  repas (hors petit-déj) et indique ce qu'il apporte
+       repas    : ancien mode — plats sans repas + onglets par jour + "À répartir"
        taches   : équipes de corvées
        economie : dépenses, foyers, qui doit quoi
        apercu   : vue d'ensemble par repas
      La feuille de présence est toujours active.
      ============================================================ */
-  const FEATURES = { repas: false, taches: false, economie: false, apercu: false };
+  const FEATURES = { plats: true, repas: false, taches: false, economie: false, apercu: false };
 
   const MEALS = [
     { id: '24-soir',  day: '24', dayLabel: 'Jeu. 24', mealLabel: 'Réveillon', order: 0 },
@@ -496,6 +505,7 @@
   const TAB_CHORES = '__chores__';
   const TAB_ECONOMY = '__economy__';
   const TAB_OVERVIEW = '__overview__';
+  const TAB_DISHES = '__dishes__';
 
   let items = [];
   let presence = [];
@@ -546,7 +556,7 @@
   function buildMealToggles(container, selectedSet, opts) {
     container.innerHTML = '';
     let lastDay = null;
-    MEALS.forEach(m => {
+    ((opts && opts.meals) || MEALS).forEach(m => {
       if (m.day !== lastDay) {
         const cap = document.createElement('span');
         cap.className = 'day-caption';
@@ -557,7 +567,9 @@
       const btn = document.createElement('button');
       btn.type = 'button';
       btn.className = 'meal-toggle' + (opts && opts.small ? ' small' : '');
-      btn.textContent = m.mealLabel;
+      btn.textContent = (opts && opts.counts)
+        ? `${m.mealLabel} · 👤 ${headcountForMeal(m.id)}`
+        : m.mealLabel;
       if (selectedSet.has(m.id)) btn.classList.add('active');
       btn.onclick = () => {
         if (selectedSet.has(m.id)) { selectedSet.delete(m.id); btn.classList.remove('active'); }
@@ -566,6 +578,21 @@
       container.appendChild(btn);
     });
   }
+
+  // Questionnaire : tous les repas sauf les petits-déjeuners.
+  const QUESTION_MEALS = MEALS.filter(m => m.id.split('-')[1] !== 'matin');
+  const QUESTION_MEAL_IDS = QUESTION_MEALS.map(m => m.id);
+  const selectedMeals = new Set();
+  const mealToggleGroup = document.getElementById('noel-meal-toggles');
+  // Reconstruit les étiquettes (le nombre de présents change avec la feuille de présence) en gardant la sélection.
+  function refreshMealToggles() {
+    buildMealToggles(mealToggleGroup, selectedMeals, { meals: QUESTION_MEALS, counts: true });
+  }
+  function resetMealToggles() {
+    selectedMeals.clear();
+    refreshMealToggles();
+  }
+  resetMealToggles();
 
   document.getElementById('pres-arrival').innerHTML = mealSelectHtml(false);
   document.getElementById('pres-departure').innerHTML = mealSelectHtml(false);
@@ -623,6 +650,9 @@
         names.map(n => `<option value="${escapeHtml(n)}">${escapeHtml(n)}</option>`).join('');
       if (names.includes(prev)) sel.value = prev;
     });
+    // Suggestions de prénoms dans le formulaire "ce que vous apportez"
+    const dl = document.getElementById('names-list');
+    if (dl) dl.innerHTML = names.map(n => `<option value="${escapeHtml(n)}"></option>`).join('');
   }
   syncCoupleSelects();
 
@@ -792,6 +822,7 @@
     if (!FEATURES.repas) {
       statsEl.innerHTML = `
         <div class="stat"><div class="n">${presence.length}</div><div class="l">Présences notées</div></div>
+        ${FEATURES.plats ? `<div class="stat"><div class="n">${items.length}</div><div class="l">Plats annoncés</div></div>` : ''}
       `;
       return;
     }
@@ -808,9 +839,17 @@
     tabsEl.innerHTML = '';
 
     // Une seule section active (la présence) : pas besoin de barre d'onglets.
-    const onlyPresence = !FEATURES.repas && !FEATURES.taches && !FEATURES.economie && !FEATURES.apercu;
+    const onlyPresence = !FEATURES.plats && !FEATURES.repas && !FEATURES.taches && !FEATURES.economie && !FEATURES.apercu;
     tabsEl.style.display = onlyPresence ? 'none' : '';
     if (onlyPresence) return;
+
+    if (FEATURES.plats) {
+      const dishesBtn = document.createElement('button');
+      dishesBtn.className = 'tab tab-special' + (activeTab === TAB_DISHES ? ' active' : '');
+      dishesBtn.textContent = '🍽️ Qui apporte quoi';
+      dishesBtn.onclick = () => { activeTab = TAB_DISHES; render(); };
+      tabsEl.appendChild(dishesBtn);
+    }
 
     if (FEATURES.repas) {
       DAYS.forEach(d => {
@@ -858,6 +897,108 @@
       ovBtn.textContent = "Vue d'ensemble";
       ovBtn.onclick = () => { activeTab = TAB_OVERVIEW; render(); };
       tabsEl.appendChild(ovBtn);
+    }
+  }
+
+  // ---- Questionnaire : qui apporte quoi, repas par repas (hors petit-déj) ----
+  function buildDishMealCard(meal) {
+    const mealItems = items
+      .filter(i => i.mealId === meal.id)
+      .sort((a, b) => (a.createdAt || 0) - (b.createdAt || 0));
+    const heads = headcountForMeal(meal.id);
+    const card = document.createElement('div');
+    card.className = 'card meal-card';
+
+    const head = document.createElement('div');
+    head.className = 'meal-head';
+    head.innerHTML = `
+      <div class="meal-title">${escapeHtml(meal.mealLabel)}</div>
+      <div class="meal-badges">
+        <div class="meal-badge heads">👤 ${heads} présent${heads > 1 ? 's' : ''}</div>
+        <div class="meal-badge count">${mealItems.length} apport${mealItems.length > 1 ? 's' : ''}</div>
+      </div>
+    `;
+    card.appendChild(head);
+
+    const grid = document.createElement('div');
+    grid.className = 'cat-grid';
+    CATEGORIES.forEach(cat => {
+      const catItems = mealItems.filter(i => i.categoryId === cat.id);
+      const block = document.createElement('div');
+      block.className = 'cat-block';
+      block.style.setProperty('--cat-color', cat.color);
+      block.innerHTML = `<div class="cat-label">${cat.emoji} ${cat.label} <span class="cat-count">${catItems.length}</span></div>`;
+
+      if (catItems.length === 0) {
+        const empty = document.createElement('div');
+        empty.className = 'empty-cat';
+        empty.textContent = 'Rien de prévu';
+        block.appendChild(empty);
+      } else {
+        catItems.forEach(it => {
+          const chip = document.createElement('div');
+          chip.className = 'chip';
+          chip.innerHTML = `
+            <div>
+              <span class="who">${escapeHtml(it.person)}</span>
+              <span class="what"> — ${escapeHtml(it.item)}</span>
+              ${it.note ? `<div class="note">${escapeHtml(it.note)}</div>` : ''}
+            </div>
+            <div class="chip-actions"><button class="del" title="Supprimer">✕</button></div>
+          `;
+          chip.querySelector('.chip-actions').insertAdjacentHTML('afterbegin', '<button class="del" title="Compléter la description" style="margin-right:4px">✏️</button>');
+          chip.querySelector('.del').onclick = () => {
+            const v = prompt('Description exacte de : ' + it.item, it.note || '');
+            if (v !== null && itemsRef) itemsRef.child(it.id).update({ note: v.trim() });
+          };
+          chip.querySelector('.del[title="Supprimer"]').onclick = () => removeItem(it.id);
+          block.appendChild(chip);
+        });
+      }
+      grid.appendChild(block);
+    });
+    card.appendChild(grid);
+    return card;
+  }
+
+  function renderDishes() {
+    const contentEl = document.getElementById('noel-content');
+    contentEl.innerHTML = '';
+
+    let lastDay = null;
+    QUESTION_MEALS.forEach(meal => {
+      if (meal.day !== lastDay) {
+        const dayHead = document.createElement('div');
+        dayHead.className = 'day-divider';
+        dayHead.textContent = meal.dayLabel;
+        contentEl.appendChild(dayHead);
+        lastDay = meal.day;
+      }
+      contentEl.appendChild(buildDishMealCard(meal));
+    });
+
+    // Apports sans repas du questionnaire (anciens ajouts, ou rattachés à un petit-déj) : on les garde visibles.
+    const others = items.filter(i => !QUESTION_MEAL_IDS.includes(i.mealId));
+    if (others.length > 0) {
+      const card = document.createElement('div');
+      card.className = 'card';
+      card.innerHTML = `<div class="form-title">Autres apports</div><div class="form-sub">Pas rattachés à un des repas ci-dessus.</div>`;
+      others.forEach(it => {
+        const m = mealById(it.mealId);
+        const cat = catById(it.categoryId);
+        const row = document.createElement('div');
+        row.className = 'presence-row';
+        row.innerHTML = `
+          <div class="presence-info">
+            <div class="who">${escapeHtml(it.person)} — ${escapeHtml(it.item)}</div>
+            <div class="range">${m ? escapeHtml(m.dayLabel + ' · ' + m.mealLabel) : 'Sans repas précisé'}${cat ? ' · ' + cat.emoji + ' ' + cat.label : ''}</div>
+          </div>
+          <button class="del" title="Supprimer">✕</button>
+        `;
+        row.querySelector('.del').onclick = () => removeItem(it.id);
+        card.appendChild(row);
+      });
+      contentEl.appendChild(card);
     }
   }
 
@@ -1440,15 +1581,24 @@
     // Si la section de l'onglet actif est désactivée, on retombe sur la présence.
     const tabEnabled =
       (activeTab === TAB_PRESENCE) ||
+      (activeTab === TAB_DISHES && FEATURES.plats) ||
       (activeTab === TAB_CHORES && FEATURES.taches) ||
       (activeTab === TAB_ECONOMY && FEATURES.economie) ||
       (activeTab === TAB_OVERVIEW && FEATURES.apercu) ||
       ((activeTab === TAB_UNASSIGNED || DAYS.includes(activeTab)) && FEATURES.repas);
-    if (!tabEnabled) activeTab = TAB_PRESENCE;
+    if (!tabEnabled) activeTab = FEATURES.plats ? TAB_DISHES : TAB_PRESENCE;
 
-    document.getElementById('item-form-card').style.display = FEATURES.repas ? '' : 'none';
+    // Avec le questionnaire, chaque formulaire n'apparaît que sur son onglet (page moins longue).
+    const showItemForm = FEATURES.plats ? (activeTab === TAB_DISHES) : FEATURES.repas;
+    const showPresenceForm = FEATURES.plats ? (activeTab === TAB_PRESENCE) : true;
+    document.getElementById('item-form-card').style.display = showItemForm ? '' : 'none';
+    document.getElementById('presence-form-card').style.display = showPresenceForm ? '' : 'none';
+    document.getElementById('noel-meals-field').style.display = FEATURES.plats ? '' : 'none';
+    document.getElementById('item-form-sub').textContent = FEATURES.plats
+      ? 'Cochez le ou les repas concernés (le même plat sur plusieurs repas ? cochez-les tous), puis indiquez ce que vous comptez apporter.'
+      : 'Vous choisirez ensuite le ou les repas depuis l\'onglet "À répartir".';
     document.getElementById('couple-form-card').style.display = (activeTab === TAB_PRESENCE) ? '' : 'none';
-    document.getElementById('page-title').textContent = FEATURES.repas ? 'Qui apporte quoi ?' : 'Qui est là, et quand ?';
+    document.getElementById('page-title').textContent = (FEATURES.repas || FEATURES.plats) ? 'Qui apporte quoi ?' : 'Qui est là, et quand ?';
     document.getElementById('expense-form-card').style.display = (activeTab === TAB_ECONOMY) ? '' : 'none';
     document.getElementById('group-form-card').style.display = (activeTab === TAB_ECONOMY) ? '' : 'none';
     renderStats();
@@ -1458,6 +1608,7 @@
     else if (activeTab === TAB_CHORES) renderChores();
     else if (activeTab === TAB_ECONOMY) renderEconomy();
     else if (activeTab === TAB_OVERVIEW) renderOverview();
+    else if (activeTab === TAB_DISHES) renderDishes();
     else renderDay(activeTab);
   }
 
@@ -1489,6 +1640,29 @@
     const msgEl = document.getElementById('noel-form-msg');
 
     if (!itemsRef) { msgEl.textContent = "Firebase n'est pas configuré."; return; }
+
+    if (FEATURES.plats) {
+      // Questionnaire : un apport par repas coché.
+      const mealIds = Array.from(selectedMeals);
+      if (mealIds.length === 0) { msgEl.textContent = 'Cochez au moins un repas.'; return; }
+
+      Promise.all(mealIds.map(mealId =>
+        itemsRef.push({ person, item, note, mealId, categoryId, createdAt: Date.now() })
+      ))
+        .then(() => {
+          msgEl.textContent = mealIds.length > 1
+            ? `Merci ${person}, c'est noté pour ${mealIds.length} repas !`
+            : `Merci ${person}, c'est noté !`;
+        })
+        .catch(() => { msgEl.textContent = "L'enregistrement a échoué, réessayez."; });
+
+      document.getElementById('noel-item').value = '';
+      document.getElementById('noel-note').value = '';
+      resetMealToggles();
+      activeTab = TAB_DISHES;
+      setTimeout(() => { msgEl.textContent = ''; }, 4500);
+      return;
+    }
 
     itemsRef.push({ person, item, note, mealId: null, categoryId, createdAt: Date.now() })
       .then(() => { msgEl.textContent = `Merci ${person}, c'est noté ! Direction "À répartir" pour choisir le(s) repas.`; })
@@ -1633,6 +1807,7 @@
         syncExpenseParticipantToggles();
         syncGroupMemberToggles();
         syncCoupleSelects();
+        refreshMealToggles();
         render();
       });
 
